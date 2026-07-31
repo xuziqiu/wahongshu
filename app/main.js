@@ -28,6 +28,7 @@ const { parseCliInvocation, cliUsage } = require("./cli");
 const { createGuiConsoleLogger } = require("./console_logger");
 const { createSessionKeeper } = require("./session_store");
 const { completedNoteIds } = require("./resume");
+const { batchOutputDirectory } = require("./batch_output");
 const {
   createSettingsStore,
   normalizeZoomPercent,
@@ -352,9 +353,14 @@ async function loadRenderedNoteSnapshot(item, signal, onLine, listUrl = "") {
   return html;
 }
 
-async function runPythonDownloader(item, signal, onLine, listUrl = "") {
+async function runPythonDownloader(
+  item,
+  signal,
+  onLine,
+  listUrl = "",
+  outputRoot = settings.downloadDirectory,
+) {
   const sourceUrl = item.url || noteUrl(item.noteId, item.xsecToken);
-  const outputRoot = settings.downloadDirectory;
   let snapshotDirectory = null;
   let snapshotPath = null;
   try {
@@ -453,12 +459,22 @@ async function runTask(limit, { resume = false, dryRun = false } = {}) {
   taskController = controller;
   const signal = controller.signal;
   const startedAt = Date.now();
+  const sourceTitle = cleanPageTitle(browserView.webContents.getTitle());
+  const taskOutputDirectory = batchOutputDirectory(
+    settings.downloadDirectory,
+    page,
+    sourceTitle,
+  );
+  fs.mkdirSync(taskOutputDirectory, { recursive: true });
   const listUrl = ["profile", "favorites"].includes(page.type)
     ? browserView.webContents.getURL()
     : "";
   state.task = {
     status: page.type === "single" ? "running" : "scanning",
     sourceType: page.type,
+    sourceId: page.profileId || "",
+    sourceTitle,
+    outputDirectory: taskOutputDirectory,
     detail:
       page.type === "single" ? "正在读取当前笔记…" : "正在识别当前列表…",
     current: 0,
@@ -489,9 +505,13 @@ async function runTask(limit, { resume = false, dryRun = false } = {}) {
     }
 
     const scanned = items.length;
+    const scannedItems = items.map((item) => ({
+      noteId: item.noteId,
+      title: item.title || item.noteId,
+    }));
     let skipped = 0;
     if (resume && page.type !== "single") {
-      const completed = completedNoteIds(settings.downloadDirectory);
+      const completed = completedNoteIds(taskOutputDirectory);
       items = items.filter(
         (item) => !completed.has(String(item.noteId || "").toLowerCase()),
       );
@@ -499,7 +519,13 @@ async function runTask(limit, { resume = false, dryRun = false } = {}) {
     }
 
     const total = items.length;
-    setTask({ scanned, skipped, planned: total, total });
+    setTask({
+      scanned,
+      skipped,
+      planned: total,
+      total,
+      items: dryRun ? scannedItems : undefined,
+    });
     if (dryRun) {
       setTask({
         status: "success",
@@ -543,6 +569,7 @@ async function runTask(limit, { resume = false, dryRun = false } = {}) {
             });
           },
           listUrl,
+          taskOutputDirectory,
         );
         state.task.completed += 1;
       } catch (error) {
@@ -678,15 +705,18 @@ async function runCli(invocation) {
   const payload = {
     status: result?.status || "failed",
     sourceType: result?.sourceType || recognizePage(invocation.url).type,
+    sourceId: result?.sourceId || "",
+    sourceTitle: result?.sourceTitle || "",
     completed: result?.completed || 0,
     failed: result?.failed || 0,
     skipped: result?.skipped || 0,
     scanned: result?.scanned || 0,
     planned: result?.planned || 0,
+    items: result?.items || [],
     title: result?.currentTitle || "",
     error: result?.error || "",
     failures: result?.failures || [],
-    outputDirectory: settings.downloadDirectory,
+    outputDirectory: result?.outputDirectory || settings.downloadDirectory,
   };
   if (invocation.json) {
     writeCli(process.stdout, JSON.stringify(payload));

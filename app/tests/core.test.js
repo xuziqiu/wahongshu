@@ -49,6 +49,10 @@ test("recognizes note, profile and favorites pages", () => {
     "profile",
   );
   assert.equal(
+    recognizePage("https://www.xiaohongshu.com/user/profile/abc").profileId,
+    "abc",
+  );
+  assert.equal(
     recognizePage(
       "https://www.xiaohongshu.com/user/profile/abc?tab=fav",
     ).type,
