@@ -6,8 +6,10 @@ const path = require("node:path");
 const test = require("node:test");
 const {
   recognizePage,
+  assertAccessiblePage,
   normalizeNavigationUrl,
   noteUrl,
+  cleanPageTitle,
   collectLinksScript,
   extractNoteScript,
   recordFromPageScript,
@@ -52,6 +54,19 @@ test("recognizes note, profile and favorites pages", () => {
     ).type,
     "favorites",
   );
+  assert.match(
+    recognizePage(
+      "https://www.xiaohongshu.com/website-login/captcha?verifyType=124",
+    ).label,
+    /安全验证/,
+  );
+  assert.throws(
+    () =>
+      assertAccessiblePage(
+        "https://www.xiaohongshu.com/website-login/captcha?verifyType=124",
+      ),
+    /安全验证/,
+  );
 });
 
 test("scripts are scoped to the requested note", () => {
@@ -60,6 +75,101 @@ test("scripts are scoped to the requested note", () => {
   assert.match(collectLinksScript(), /querySelectorAll/);
   assert.match(noteUrl(id, "secret"), /xsec_token=secret/);
   assert.match(extractNoteScript(id), /candidates\.sort/);
+});
+
+test("removes only the Xiaohongshu suffix from a page title", () => {
+  assert.equal(cleanPageTitle("汗水向下，人生向上 - 小红书"), "汗水向下，人生向上");
+  assert.equal(cleanPageTitle("标题-保留"), "标题-保留");
+});
+
+test("list scanning keeps card order while filling title and token", () => {
+  const firstId = "6a5c69ab000000000f02b320";
+  const secondId = "6a66ae05000000000401e3aa";
+  const originalDocument = global.document;
+  const originalLocation = global.location;
+  const originalWindow = global.window;
+  const makeLink = ({ href, text = "", alt = "", cardTitle = "" }) => ({
+    href,
+    innerText: text,
+    getAttribute(name) {
+      return name === "title" ? "" : null;
+    },
+    querySelector(selector) {
+      return selector === "img"
+        ? { getAttribute: (name) => (name === "alt" ? alt : null) }
+        : null;
+    },
+    closest() {
+      return {
+        querySelector(selector) {
+          return selector === ".title"
+            ? { innerText: cardTitle, textContent: cardTitle }
+            : null;
+        },
+      };
+    },
+  });
+  global.document = {
+    querySelectorAll() {
+      return [
+        makeLink({ href: `https://www.xiaohongshu.com/explore/${secondId}` }),
+        makeLink({
+          href: `https://www.xiaohongshu.com/explore/${firstId}`,
+          cardTitle: "完整标题",
+        }),
+      ];
+    },
+  };
+  global.location = { href: "https://www.xiaohongshu.com/" };
+  global.window = {
+    __INITIAL_STATE__: {
+      user: {
+        notes: {
+          _value: [
+            [
+              {
+                noteCard: {
+                  noteId: firstId,
+                  displayTitle: "第一篇",
+                  xsecToken: "first-secret",
+                },
+              },
+              {
+                noteCard: {
+                  noteId: secondId,
+                  displayTitle: "第二篇",
+                  xsecToken: "second-secret",
+                },
+              },
+            ],
+          ],
+        },
+      },
+    },
+  };
+  try {
+    const result = eval(collectLinksScript());
+    assert.equal(result.length, 2);
+    assert.deepEqual(result.map((item) => item.noteId), [firstId, secondId]);
+    assert.deepEqual(result.map((item) => item.title), ["完整标题", "第二篇"]);
+    assert.equal(result[0].xsecToken, "first-secret");
+    assert.equal(result[1].xsecToken, "second-secret");
+    assert.equal(
+      new URL(result[0].url).searchParams.get("xsec_source"),
+      "pc_user",
+    );
+    global.location.href =
+      "https://www.xiaohongshu.com/user/profile/test?tab=fav";
+    const favoritesResult = eval(collectLinksScript());
+    assert.equal(
+      new URL(favoritesResult[0].url).searchParams.get("xsec_source"),
+      "pc_collect",
+    );
+  } finally {
+    global.document = originalDocument;
+    global.location = originalLocation;
+    global.window = originalWindow;
+  }
 });
 
 test("downloads static image and Live stream into one note folder", async () => {

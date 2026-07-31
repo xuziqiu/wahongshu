@@ -40,6 +40,8 @@ function render(state) {
       `${preferences.browserZoomPercent}%`;
     $("#download-directory").textContent = preferences.downloadDirectory;
     $("#user-data-directory").textContent = preferences.userDataDirectory;
+    $("#download-location-help").textContent =
+      `文件保存到：${preferences.downloadDirectory}`;
     $("#reset-download-directory").disabled =
       preferences.downloadDirectory === preferences.defaultDownloadDirectory;
   }
@@ -196,12 +198,11 @@ $("#start").addEventListener("click", async () => {
 });
 
 $("#cancel").addEventListener("click", () => window.wahongshu.cancel());
-$("#downloads").addEventListener("click", () =>
-  window.wahongshu.openDownloads(),
-);
-$("#devtools").addEventListener("click", () =>
-  window.wahongshu.openDevTools(),
-);
-
+$("#downloads").addEventListener("click", async () => {
+  const result = await window.wahongshu.openDownloads();
+  if (result && !result.ok) {
+    alert(result.error || "无法打开下载目录");
+  }
+});
 window.wahongshu.onState(render);
 window.wahongshu.getState().then(render);

@@ -42,6 +42,24 @@ function recognizePage(urlText) {
     if (!["www.xiaohongshu.com", "xiaohongshu.com"].includes(url.hostname)) {
       return { type: "unsupported", label: "请打开小红书页面" };
     }
+    if (/^\/website-login\/captcha/.test(url.pathname)) {
+      return {
+        type: "unsupported",
+        label: "请先在内置浏览器完成小红书安全验证",
+      };
+    }
+    if (/^\/(?:login|website-login)(?:\/|$)/.test(url.pathname)) {
+      return {
+        type: "unsupported",
+        label: "请先在内置浏览器登录小红书",
+      };
+    }
+    if (/^\/404(?:\/|$)/.test(url.pathname)) {
+      return {
+        type: "unsupported",
+        label: "小红书暂时无法打开这个页面",
+      };
+    }
     const note = url.pathname.match(
       /\/(?:explore|discovery\/item|search_result)\/([0-9a-f]{24})/i,
     );
@@ -67,6 +85,16 @@ function recognizePage(urlText) {
   }
 }
 
+function assertAccessiblePage(urlText) {
+  const page = recognizePage(urlText);
+  if (
+    page.type === "unsupported" &&
+    /安全验证|登录小红书|无法打开/.test(page.label)
+  ) {
+    throw new Error(page.label);
+  }
+}
+
 function noteUrl(noteId, xsecToken = "") {
   const url = new URL(
     `/explore/${noteId}`,
@@ -77,10 +105,33 @@ function noteUrl(noteId, xsecToken = "") {
   return url.toString();
 }
 
+function cleanPageTitle(value) {
+  return String(value || "")
+    .replace(/\s*[-–—]\s*小红书\s*$/u, "")
+    .trim();
+}
+
 function collectLinksScript() {
   return `(() => {
-    const result = [];
-    const seen = new Set();
+    const result = new Map();
+    const stateCards = new Map();
+    const state = window.__INITIAL_STATE__;
+    const noteGroups = [
+      state?.user?.notes?._value,
+      state?.user?.notes?._rawValue,
+      Array.isArray(state?.user?.notes) ? state.user.notes : null
+    ];
+    for (const groups of noteGroups) {
+      if (!Array.isArray(groups)) continue;
+      for (const row of groups) {
+        if (!Array.isArray(row)) continue;
+        for (const value of row) {
+          const card = value?.noteCard || value?.note_card || value;
+          const id = String(card?.noteId || card?.note_id || "").toLowerCase();
+          if (id && !stateCards.has(id)) stateCards.set(id, card);
+        }
+      }
+    }
     for (const link of document.querySelectorAll(
       'a[href*="/explore/"],a[href*="/discovery/item/"],a[href*="/search_result/"]'
     )) {
@@ -89,23 +140,61 @@ function collectLinksScript() {
         const match = url.pathname.match(
           /\\/(?:explore|discovery\\/item|search_result)\\/([0-9a-fA-F]{24})/
         );
-        if (!match || seen.has(match[1].toLowerCase())) continue;
-        seen.add(match[1].toLowerCase());
+        if (!match) continue;
+        const noteId = match[1].toLowerCase();
+        const stateCard = stateCards.get(noteId);
         const image = link.querySelector("img");
-        result.push({
-          noteId: match[1].toLowerCase(),
-          title: (
-            link.getAttribute("title") ||
-            image?.getAttribute("alt") ||
-            link.innerText ||
-            ""
-          ).trim().slice(0, 300),
+        const card = link.closest?.(".note-item") || link.parentElement;
+        const cardTitle = card?.querySelector?.(".title");
+        const title = [
+          link.getAttribute("title"),
+          image?.getAttribute("alt"),
+          link.innerText,
+          cardTitle?.innerText,
+          cardTitle?.textContent,
+          stateCard?.displayTitle,
+          stateCard?.display_title,
+          stateCard?.title
+        ].find((value) => String(value || "").trim());
+        const stateToken = String(
+          stateCard?.xsecToken || stateCard?.xsec_token || ""
+        );
+        if (!url.searchParams.get("xsec_token") && stateToken) {
+          url.searchParams.set("xsec_token", stateToken);
+          url.searchParams.set(
+            "xsec_source",
+            new URL(location.href).searchParams.get("tab") === "fav"
+              ? "pc_collect"
+              : "pc_user"
+          );
+        }
+        const item = {
+          noteId,
+          title: String(title || "").trim().slice(0, 300),
           xsecToken: url.searchParams.get("xsec_token") || "",
           url: url.toString()
-        });
+        };
+        const existing = result.get(noteId);
+        if (!existing) {
+          result.set(noteId, item);
+        } else {
+          if (!existing.title && item.title) existing.title = item.title;
+          if (!existing.xsecToken && item.xsecToken) {
+            existing.xsecToken = item.xsecToken;
+            existing.url = item.url;
+          }
+        }
       } catch {}
     }
-    return result;
+    const ordered = [];
+    for (const noteId of stateCards.keys()) {
+      const item = result.get(noteId);
+      if (item) ordered.push(item);
+    }
+    for (const [noteId, item] of result) {
+      if (!stateCards.has(noteId)) ordered.push(item);
+    }
+    return ordered;
   })()`;
 }
 
@@ -439,7 +528,9 @@ module.exports = {
   NOTE_ID,
   normalizeNavigationUrl,
   recognizePage,
+  assertAccessiblePage,
   noteUrl,
+  cleanPageTitle,
   collectLinksScript,
   extractNoteScript,
   recordFromNote,

@@ -18,7 +18,6 @@ contextBridge.exposeInMainWorld("wahongshu", {
   setSettingsOpen: (open) =>
     ipcRenderer.invoke("wahongshu:set-settings-open", open),
   openUserData: () => ipcRenderer.invoke("wahongshu:open-user-data"),
-  openDevTools: () => ipcRenderer.invoke("wahongshu:open-devtools"),
   onState: (callback) => {
     const listener = (_event, state) => callback(state);
     ipcRenderer.on("wahongshu:state", listener);

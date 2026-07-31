@@ -17,8 +17,12 @@ const {
   normalizeNavigationUrl,
   noteUrl,
   collectLinksScript,
-  extractNoteScript,
+  cleanPageTitle,
 } = require("./core");
+const {
+  resolveBatchNoteUrl,
+  waitForRenderedNote,
+} = require("./page_workflow");
 const { createSessionKeeper } = require("./session_store");
 const {
   createSettingsStore,
@@ -77,7 +81,6 @@ let mainWindow = null;
 let browserView = null;
 let taskController = null;
 let activeWorker = null;
-let activePageWindow = null;
 let sessionKeeper = null;
 let quitPrepared = false;
 let quitPreparing = false;
@@ -198,6 +201,7 @@ async function createMainWindow() {
     minWidth: 1000,
     minHeight: 680,
     title: PRODUCT_NAME,
+    autoHideMenuBar: true,
     backgroundColor: "#f4f1ea",
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
@@ -206,6 +210,7 @@ async function createMainWindow() {
       sandbox: true,
     },
   });
+  mainWindow.setMenuBarVisibility(false);
   await mainWindow.loadFile(path.join(__dirname, "ui", "index.html"));
   registerZoomShortcuts(mainWindow.webContents);
 
@@ -289,88 +294,58 @@ function redactWorkerLine(value) {
     .trim();
 }
 
-async function loadRenderedNoteSnapshot(item, signal, onLine) {
-  const sourceUrl = item.url || noteUrl(item.noteId, item.xsecToken);
-  const pageWindow = new BrowserWindow({
-    show: false,
-    width: 1280,
-    height: 900,
-    webPreferences: {
-      partition: PARTITION,
-      contextIsolation: true,
-      nodeIntegration: false,
-      sandbox: true,
-      backgroundThrottling: false,
-    },
-  });
-  activePageWindow = pageWindow;
-  pageWindow.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
-  const abort = () => {
-    if (!pageWindow.isDestroyed()) pageWindow.destroy();
-  };
-  signal.addEventListener("abort", abort, { once: true });
-  try {
-    let loadTimer;
+async function loadRenderedNoteSnapshot(item, signal, onLine, listUrl = "") {
+  const contents = browserView.webContents;
+  if (listUrl) {
+    onLine?.("正在从当前列表打开笔记原始页面…");
+    let resolvedUrl = "";
     try {
-      await Promise.race([
-        pageWindow.loadURL(sourceUrl),
-        new Promise((_, reject) => {
-          loadTimer = setTimeout(
-            () => reject(new Error("登录浏览器打开笔记超时")),
-            30000,
-          );
-        }),
-      ]);
-    } finally {
-      clearTimeout(loadTimer);
-    }
-
-    const started = Date.now();
-    let serialized = null;
-    while (Date.now() - started < 20000) {
-      if (signal.aborted || pageWindow.isDestroyed()) {
-        throw new Error("任务已停止");
+      const scannedUrl = new URL(item.url || "");
+      if (
+        ["xiaohongshu.com", "www.xiaohongshu.com"].includes(
+          scannedUrl.hostname,
+        ) &&
+        scannedUrl.pathname.toLowerCase().includes(item.noteId.toLowerCase()) &&
+        scannedUrl.searchParams.has("xsec_token")
+      ) {
+        resolvedUrl = scannedUrl.toString();
       }
-      try {
-        serialized = await pageWindow.webContents.executeJavaScript(
-          extractNoteScript(item.noteId),
-        );
-      } catch (error) {
-        if (pageWindow.isDestroyed()) throw error;
-      }
-      if (serialized) break;
-      await wait(500);
+    } catch {}
+    if (!resolvedUrl) {
+      resolvedUrl = await resolveBatchNoteUrl(
+        contents,
+        listUrl,
+        item.noteId,
+        signal,
+      );
     }
-    if (!serialized) {
-      throw new Error(`登录浏览器没有加载出笔记 ${item.noteId} 的详情`);
-    }
-    const note = JSON.parse(serialized);
-    const returnedId = String(note.noteId || note.note_id || "").toLowerCase();
-    if (returnedId && returnedId !== item.noteId.toLowerCase()) {
-      throw new Error("登录浏览器返回了错误的笔记详情");
-    }
-    onLine?.("已从登录浏览器加载笔记详情");
-    return `window.__INITIAL_STATE__=${JSON.stringify({
-      note: {
-        noteDetailMap: {
-          [item.noteId]: { note },
-        },
-      },
-    })}`;
-  } finally {
-    signal.removeEventListener("abort", abort);
-    if (!pageWindow.isDestroyed()) pageWindow.destroy();
-    if (activePageWindow === pageWindow) activePageWindow = null;
+    await contents.loadURL(resolvedUrl);
   }
+  await waitForRenderedNote(
+    contents,
+    item.noteId,
+    signal,
+  );
+  const html = await contents.executeJavaScript(
+    "document.documentElement.outerHTML",
+  );
+  if (
+    !String(html).includes("window.__INITIAL_STATE__") ||
+    !String(html).toLowerCase().includes(item.noteId.toLowerCase())
+  ) {
+    throw new Error("当前笔记原始页面缺少完整媒体状态");
+  }
+  onLine?.("已从当前登录页面读取原始笔记状态");
+  return html;
 }
 
-async function runPythonDownloader(item, signal, onLine) {
+async function runPythonDownloader(item, signal, onLine, listUrl = "") {
   const sourceUrl = item.url || noteUrl(item.noteId, item.xsecToken);
   const outputRoot = settings.downloadDirectory;
   let snapshotDirectory = null;
   let snapshotPath = null;
   try {
-    const html = await loadRenderedNoteSnapshot(item, signal, onLine);
+    const html = await loadRenderedNoteSnapshot(item, signal, onLine, listUrl);
     snapshotDirectory = await fs.promises.mkdtemp(
       path.join(app.getPath("temp"), "wahongshu-page-"),
     );
@@ -463,6 +438,9 @@ async function runTask(limit) {
   taskController = controller;
   const signal = controller.signal;
   const startedAt = Date.now();
+  const listUrl = ["profile", "favorites"].includes(page.type)
+    ? browserView.webContents.getURL()
+    : "";
   state.task = {
     status: page.type === "single" ? "running" : "scanning",
     sourceType: page.type,
@@ -484,7 +462,7 @@ async function runTask(limit) {
       items = [
         {
           noteId: page.noteId,
-          title: browserView.webContents.getTitle(),
+          title: cleanPageTitle(browserView.webContents.getTitle()),
           url: browserView.webContents.getURL(),
         },
       ];
@@ -508,15 +486,20 @@ async function runTask(limit) {
         percent: Math.round((index / total) * 100),
       });
       try {
-        await runPythonDownloader(item, signal, (line) => {
-          setTask({
-            detail: line,
-            percent: Math.min(
-              99,
-              Math.round(((index + 0.35) / total) * 100),
-            ),
-          });
-        });
+        await runPythonDownloader(
+          item,
+          signal,
+          (line) => {
+            setTask({
+              detail: line,
+              percent: Math.min(
+                99,
+                Math.round(((index + 0.35) / total) * 100),
+              ),
+            });
+          },
+          listUrl,
+        );
         state.task.completed += 1;
       } catch (error) {
         if (signal.aborted) throw error;
@@ -555,6 +538,10 @@ async function runTask(limit) {
   } finally {
     taskController = null;
     activeWorker = null;
+    if (listUrl && browserView && !browserView.webContents.isDestroyed()) {
+      await browserView.webContents.loadURL(listUrl).catch(() => {});
+      updateBrowserState();
+    }
   }
 }
 
@@ -600,14 +587,14 @@ function registerIpc() {
   ipcMain.handle("wahongshu:cancel", () => {
     taskController?.abort();
     activeWorker?.kill();
-    if (activePageWindow && !activePageWindow.isDestroyed()) {
-      activePageWindow.destroy();
-    }
+    browserView?.webContents.stop();
     return { ok: true };
   });
-  ipcMain.handle("wahongshu:open-downloads", () =>
-    shell.openPath(settings.downloadDirectory),
-  );
+  ipcMain.handle("wahongshu:open-downloads", async () => {
+    fs.mkdirSync(settings.downloadDirectory, { recursive: true });
+    const error = await shell.openPath(settings.downloadDirectory);
+    return { ok: !error, error };
+  });
   ipcMain.handle("wahongshu:choose-download-directory", async () => {
     const result = await dialog.showOpenDialog(mainWindow, {
       title: "选择挖红薯的下载位置",
@@ -629,6 +616,7 @@ function registerIpc() {
       ...settings,
       downloadDirectory: DEFAULT_DOWNLOAD_DIRECTORY,
     });
+    fs.mkdirSync(settings.downloadDirectory, { recursive: true });
     broadcast();
     return { downloadDirectory: settings.downloadDirectory };
   });
@@ -642,10 +630,6 @@ function registerIpc() {
   ipcMain.handle("wahongshu:open-user-data", () =>
     shell.openPath(app.getPath("userData")),
   );
-  ipcMain.handle("wahongshu:open-devtools", () => {
-    browserView.webContents.openDevTools({ mode: "detach" });
-    return { ok: true };
-  });
 }
 
 app.whenReady().then(async () => {
@@ -675,9 +659,6 @@ app.on("window-all-closed", () => {
 app.on("before-quit", (event) => {
   taskController?.abort();
   activeWorker?.kill();
-  if (activePageWindow && !activePageWindow.isDestroyed()) {
-    activePageWindow.destroy();
-  }
   if (quitPrepared || !sessionKeeper) return;
   event.preventDefault();
   if (quitPreparing) return;

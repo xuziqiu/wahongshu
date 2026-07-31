@@ -7,6 +7,7 @@ from core.downloader import (
     download_candidates,
     download_live_photo,
     download_note_video,
+    find_note,
 )
 
 
@@ -25,6 +26,35 @@ EF51_MP4 = b"\x00\x00\x00\x18ftypisomef51" + b"video"
 
 
 class DownloadCoreTests(unittest.TestCase):
+    def test_find_note_prefers_complete_live_detail_over_static_card_copy(self):
+        note_id = "6a5c69ab000000000f02b320"
+        static_copy = {
+            "noteId": note_id,
+            "type": "normal",
+            "imageList": [{"livePhoto": True, "fileId": "image-1"}],
+        }
+        complete_copy = {
+            "noteId": note_id,
+            "type": "normal",
+            "imageList": [
+                {
+                    "livePhoto": True,
+                    "fileId": "image-1",
+                    "stream": {
+                        "h264": [
+                            {"masterUrl": "https://example.test/live.mp4"}
+                        ]
+                    },
+                }
+            ],
+        }
+        state = {
+            "note": {"noteDetailMap": {note_id: {"note": static_copy}}},
+            "other": {"renderedDetail": complete_copy},
+        }
+
+        self.assertIs(find_note(state, note_id), complete_copy)
+
     def test_image_primary_success_does_not_download_fallback_versions(self):
         image = {
             "fileId": "notes/test-image",
@@ -105,6 +135,57 @@ class DownloadCoreTests(unittest.TestCase):
         self.assertEqual(result["codec"], "h264")
         self.assertEqual(mocked.call_args.args[0], "https://example.test/h264.mp4")
 
+    def test_live_photo_tries_the_next_h264_variant_after_failure(self):
+        image = {
+            "livePhoto": True,
+            "stream": {
+                "h264": [
+                    {
+                        "width": 1920,
+                        "height": 1080,
+                        "masterUrl": "https://example.test/broken.mp4",
+                    },
+                    {
+                        "width": 1280,
+                        "height": 720,
+                        "masterUrl": "https://example.test/working.mp4",
+                    },
+                ],
+            },
+        }
+
+        def fake_fetch(url, **_kwargs):
+            if "broken" in url:
+                raise TimeoutError("unavailable")
+            return response(url, H264_MP4)
+
+        with patch("core.downloader.fetch", side_effect=fake_fetch) as mocked:
+            result = download_live_photo(image, "https://example.test", 5)
+        self.assertEqual(result["url"], "https://example.test/working.mp4")
+        self.assertEqual(mocked.call_count, 2)
+        self.assertTrue(result["errors"])
+
+    def test_live_photo_detects_h264_inside_opaque_browser_stream_group(self):
+        image = {
+            "livePhoto": True,
+            "stream": {
+                "EF7": [],
+                "EF4": [
+                    {"masterUrl": "https://example.test/opaque-live.mp4"}
+                ],
+            },
+        }
+        with patch(
+            "core.downloader.fetch",
+            return_value=response(
+                "https://example.test/opaque-live.mp4",
+                H264_MP4,
+            ),
+        ):
+            result = download_live_photo(image, "https://example.test", 5)
+        self.assertEqual(result["codec"], "h264")
+        self.assertEqual(result["declared_codec"], "EF4")
+
     def test_video_prefers_declared_h264_over_opaque_ef51(self):
         note = {
             "type": "video",
@@ -141,6 +222,42 @@ class DownloadCoreTests(unittest.TestCase):
             result = download_note_video(note, "https://example.test", 5)
         self.assertEqual(result["codec_hint"], "h264")
         self.assertEqual(result["url"], "https://example.test/h264.mp4")
+        self.assertEqual(mocked.call_count, 1)
+
+    def test_video_understands_opaque_browser_codec_groups(self):
+        note = {
+            "type": "video",
+            "video": {
+                "media": {
+                    "stream": {
+                        "EF5": [
+                            {
+                                "videoCodec": "EF5",
+                                "width": 1920,
+                                "height": 1080,
+                                "masterUrl": "https://example.test/h265.mp4",
+                            }
+                        ],
+                        "EF4": [
+                            {
+                                "videoCodec": "EF4",
+                                "width": 1280,
+                                "height": 720,
+                                "masterUrl": "https://example.test/h264.mp4",
+                            }
+                        ],
+                    }
+                }
+            },
+        }
+        with patch(
+            "core.downloader.fetch",
+            return_value=response("https://example.test/h264.mp4", H264_MP4),
+        ) as mocked:
+            result = download_note_video(note, "https://example.test", 5)
+        self.assertEqual(result["codec_hint"], "h264")
+        self.assertEqual(result["declared_codec"], "EF4")
+        self.assertEqual(result["codec"], "h264")
         self.assertEqual(mocked.call_count, 1)
 
 

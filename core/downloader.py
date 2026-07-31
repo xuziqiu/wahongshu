@@ -26,6 +26,12 @@ from urllib.parse import quote, urlsplit, urlunsplit
 from urllib.request import Request, urlopen
 
 
+def configure_console() -> None:
+    for console_stream in (sys.stdout, sys.stderr):
+        if hasattr(console_stream, "reconfigure"):
+            console_stream.reconfigure(encoding="utf-8", errors="replace")
+
+
 USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
     "AppleWebKit/537.36 (KHTML, like Gecko) "
@@ -187,27 +193,71 @@ def note_id_from_url(url: str) -> str:
     return match.group(1)
 
 
+def note_quality(note: dict[str, Any]) -> int:
+    """Prefer the complete detail copy when page state repeats a note card."""
+    images = note.get("imageList") or note.get("image_list") or []
+    try:
+        serialized = json.dumps(note, ensure_ascii=False, separators=(",", ":"))
+    except (TypeError, ValueError):
+        serialized = ""
+    score = len(serialized)
+    if isinstance(images, list):
+        score += len(images) * 10_000
+        for image in images:
+            if not isinstance(image, dict):
+                continue
+            if image.get("livePhoto") or image.get("live_photo"):
+                score += 100_000
+            if (
+                image.get("stream")
+                or image.get("livePhotoStream")
+                or image.get("live_photo_stream")
+            ):
+                score += 200_000
+    if isinstance(note.get("video"), dict):
+        score += 300_000
+    if "originVideoKey" in serialized or "origin_video_key" in serialized:
+        score += 300_000
+    if "masterUrl" in serialized or "master_url" in serialized:
+        score += 200_000
+    return score
+
+
 def find_note(state: dict[str, Any], note_id: str) -> dict[str, Any]:
+    candidates: list[dict[str, Any]] = []
+    seen_candidates: set[int] = set()
+
+    def add_candidate(value: Any) -> None:
+        if not isinstance(value, dict) or id(value) in seen_candidates:
+            return
+        candidate_id = value.get("noteId") or value.get("note_id")
+        images = value.get("imageList") or value.get("image_list")
+        if str(candidate_id).lower() != note_id.lower():
+            return
+        if not isinstance(images, list) and value.get("type") != "video":
+            return
+        seen_candidates.add(id(value))
+        candidates.append(value)
+
     note_store = state.get("note", {})
     detail_map = note_store.get("noteDetailMap", {})
     entry = detail_map.get(note_id)
     if isinstance(entry, dict):
         note = entry.get("note", entry)
-        if isinstance(note, dict):
-            return note
+        add_candidate(note)
 
-    # Fallback for future state-layout changes.
+    # Page state can contain both a lightweight card and a complete detail copy.
+    # Inspect all matching copies so traversal order cannot discard media streams.
     stack: list[Any] = [state]
     while stack:
         value = stack.pop()
         if isinstance(value, dict):
-            candidate_id = value.get("noteId") or value.get("note_id")
-            images = value.get("imageList") or value.get("image_list")
-            if candidate_id == note_id and isinstance(images, list):
-                return value
+            add_candidate(value)
             stack.extend(value.values())
         elif isinstance(value, list):
             stack.extend(value)
+    if candidates:
+        return max(candidates, key=note_quality)
     raise ValueError(f"Note {note_id} was not found in the page state")
 
 
@@ -428,6 +478,19 @@ def choose_best(candidates: list[dict[str, Any]]) -> dict[str, Any]:
     )
 
 
+def detect_mp4_codec(data: bytes) -> str | None:
+    sample = data[:65_536].lower()
+    if b"avc1" in sample or b"avc3" in sample:
+        return "h264"
+    if b"hvc1" in sample or b"hev1" in sample:
+        return "h265"
+    if b"av01" in sample:
+        return "av1"
+    if b"vvc1" in sample or b"h266" in sample or b"ef51" in sample:
+        return "h266"
+    return None
+
+
 def download_live_photo(
     image: dict[str, Any],
     referer: str,
@@ -438,14 +501,43 @@ def download_live_photo(
 
     stream = image.get("stream")
     if not isinstance(stream, dict):
-        return None
+        return {
+            "codec": None,
+            "errors": ["Live Photo has no declared stream data"],
+            "_data": b"",
+        }
 
     codec_order = ("h264", "h265", "av1", "h266")
-    for codec in codec_order:
-        variants = stream.get(codec)
-        if not isinstance(variants, list):
-            continue
-        for variant in variants:
+    stream_groups = [
+        (codec, stream.get(codec))
+        for codec in codec_order
+        if isinstance(stream.get(codec), list)
+    ]
+    stream_groups.extend(
+        (str(codec), variants)
+        for codec, variants in stream.items()
+        if codec not in codec_order and isinstance(variants, list)
+    )
+    errors: list[str] = []
+    playable_fallback: dict[str, Any] | None = None
+    for declared_codec, variants in stream_groups:
+        ordered_variants = sorted(
+            (variant for variant in variants if isinstance(variant, dict)),
+            key=lambda variant: (
+                int(first_value(variant, "width") or 0)
+                * int(first_value(variant, "height") or 0),
+                int(
+                    first_value(
+                        variant,
+                        "videoBitrate",
+                        "video_bitrate",
+                    )
+                    or 0
+                ),
+            ),
+            reverse=True,
+        )
+        for variant in ordered_variants:
             if not isinstance(variant, dict):
                 continue
             urls: list[str] = []
@@ -460,7 +552,6 @@ def download_live_photo(
                     if isinstance(item, str) and item
                 )
 
-            errors: list[str] = []
             for url in urls:
                 if url.startswith("http://"):
                     url = "https://" + url[len("http://") :]
@@ -470,8 +561,10 @@ def download_live_photo(
                     if len(data) < 12 or data[4:8] != b"ftyp":
                         errors.append(f"{sanitize_url(url)}: not an MP4/MOV file")
                         continue
-                    return {
-                        "codec": codec,
+                    detected_codec = detect_mp4_codec(data)
+                    result = {
+                        "codec": detected_codec or declared_codec,
+                        "declared_codec": declared_codec,
                         "quality_type": variant.get("qualityType"),
                         "hdr_type": variant.get("hdrType"),
                         "url": sanitize_url(response.final_url),
@@ -479,9 +572,13 @@ def download_live_photo(
                         "bytes": len(data),
                         "sha256": hashlib.sha256(data).hexdigest(),
                         "extension": ".mp4",
-                        "errors": errors,
+                        "errors": list(errors),
                         "_data": data,
                     }
+                    if detected_codec == "h264" or declared_codec == "h264":
+                        return result
+                    if playable_fallback is None:
+                        playable_fallback = result
                 except (
                     HTTPError,
                     URLError,
@@ -490,15 +587,14 @@ def download_live_photo(
                     http.client.IncompleteRead,
                 ) as error:
                     errors.append(f"{sanitize_url(url)}: {error}")
-            if errors:
-                return {
-                    "codec": codec,
-                    "quality_type": variant.get("qualityType"),
-                    "hdr_type": variant.get("hdrType"),
-                    "errors": errors,
-                    "_data": b"",
-                }
-    return None
+    if playable_fallback is not None:
+        playable_fallback["errors"] = list(errors)
+        return playable_fallback
+    return {
+        "codec": None,
+        "errors": errors or ["Live Photo has no usable stream URL"],
+        "_data": b"",
+    }
 
 
 def first_value(mapping: dict[str, Any], *keys: str) -> Any:
@@ -574,29 +670,49 @@ def download_note_video(
         stream_sources.append(media_v2_stream)
 
     stream_variants: list[dict[str, Any]] = []
+    codec_compatibility = {
+        "h264": 4_000_000_000_000_000_000,
+        "h265": 3_000_000_000_000_000_000,
+        "av1": 2_000_000_000_000_000_000,
+        "h266": 1_000_000_000_000_000_000,
+    }
+    # Browser-rendered state may replace codec property names with stable
+    # wire identifiers even though each variant still declares videoCodec.
+    opaque_codec_hints = {
+        "EF4": "h264",
+        "EF5": "h265",
+        "EF6": "av1",
+        "EF7": "h266",
+    }
     for stream in stream_sources:
-        for codec in ("h264", "h265", "av1", "h266"):
-            variants = stream.get(codec)
+        for stream_key, variants in stream.items():
             if not isinstance(variants, list):
                 continue
             for variant in variants:
                 if not isinstance(variant, dict):
                     continue
+                declared_codec = str(
+                    first_value(variant, "videoCodec", "video_codec")
+                    or stream_key
+                )
+                codec = declared_codec.lower()
+                if codec not in codec_compatibility:
+                    codec = opaque_codec_hints.get(declared_codec.upper(), "unknown")
                 width = int(first_value(variant, "width") or 0)
                 height = int(first_value(variant, "height") or 0)
                 bitrate = int(
                     first_value(variant, "videoBitrate", "video_bitrate") or 0
                 )
-                compatibility = {
-                    "h264": 4_000_000_000_000_000_000,
-                    "h265": 3_000_000_000_000_000_000,
-                    "av1": 2_000_000_000_000_000_000,
-                    "h266": 1_000_000_000_000_000_000,
-                }[codec]
+                compatibility = codec_compatibility.get(codec, 0)
                 stream_variants.append(
                     {
-                        "source": "declared_stream",
+                        "source": (
+                            "declared_stream"
+                            if declared_codec.lower() in codec_compatibility
+                            else "opaque_stream"
+                        ),
                         "codec_hint": codec,
+                        "declared_codec": declared_codec,
                         "width_hint": width,
                         "height_hint": height,
                         "bitrate_hint": bitrate,
@@ -648,7 +764,8 @@ def download_note_video(
                 if len(data) < 12 or data[4:8] != b"ftyp":
                     errors.append(f"{sanitize_url(url)}: not an MP4/MOV file")
                     continue
-                if b"avc1" not in data and b"avc3" not in data:
+                detected_codec = detect_mp4_codec(data)
+                if detected_codec != "h264":
                     errors.append(
                         f"{sanitize_url(url)}: video is not compatible H.264"
                     )
@@ -666,6 +783,7 @@ def download_note_video(
                         "sha256": hashlib.sha256(data).hexdigest(),
                         "md5": hashlib.md5(data).hexdigest(),
                         "extension": ".mp4",
+                        "codec": detected_codec,
                         "errors": errors,
                         "_data": data,
                     }
@@ -694,6 +812,7 @@ def write_json(path: Path, value: Any) -> None:
 
 
 def main(argv: list[str] | None = None) -> int:
+    configure_console()
     parser = argparse.ArgumentParser(
         description=(
             "Download the best publicly exposed image assets from one "
@@ -818,6 +937,7 @@ def main(argv: list[str] | None = None) -> int:
             f"({video_result['source']}, {video_result['bytes']} bytes)"
         )
 
+    live_failures: list[str] = []
     for index, image in enumerate(images if note_type != "video" else [], start=1):
         print(f"[{index}/{len(images)}] 正在获取第 {index} 张图片…")
         results = download_candidates(
@@ -854,7 +974,8 @@ def main(argv: list[str] | None = None) -> int:
             "selected_bytes": best["bytes"],
             "selected_sha256": best["sha256"],
             "selected_dimensions": best.get("dimensions"),
-            "live_photo": bool(image.get("livePhoto")),
+            "live_photo_expected": bool(image.get("livePhoto")),
+            "live_photo": live_path is not None,
         }
         if live_result is not None:
             public_live = {
@@ -877,10 +998,19 @@ def main(argv: list[str] | None = None) -> int:
                 f"  saved {live_path} "
                 f"({live_result['codec']}, {live_result['bytes']} bytes)"
             )
+        elif image.get("livePhoto"):
+            reason = "; ".join(live_result.get("errors", [])) if live_result else (
+                "Live Photo has no stream data"
+            )
+            live_failures.append(f"image {index}: {reason}")
 
     manifest_path = output_dir / "manifest.json"
     write_json(manifest_path, manifest)
     print(f"manifest: {manifest_path}")
+    if live_failures:
+        raise RuntimeError(
+            "Live Photo video download failed: " + " | ".join(live_failures)
+        )
     return 0
 
 
