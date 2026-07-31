@@ -170,7 +170,7 @@ npm test
 构建自包含 Windows 便携版：
 
 ```powershell
-python -m pip install pyinstaller
+python -m pip install pillow pyinstaller
 npm run dist:local
 ```
 
