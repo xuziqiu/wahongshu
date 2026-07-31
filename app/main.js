@@ -17,6 +17,7 @@ const {
   normalizeNavigationUrl,
   noteUrl,
   collectLinksScript,
+  fetchAuthenticatedPage,
 } = require("./core");
 const { createSessionKeeper } = require("./session_store");
 const {
@@ -290,6 +291,29 @@ function redactWorkerLine(value) {
 async function runPythonDownloader(item, signal, onLine) {
   const sourceUrl = item.url || noteUrl(item.noteId, item.xsecToken);
   const outputRoot = settings.downloadDirectory;
+  let snapshotDirectory = null;
+  let snapshotPath = null;
+  try {
+    const html = await fetchAuthenticatedPage(
+      browserView.webContents.session,
+      sourceUrl,
+      browserView.webContents.getURL(),
+      signal,
+    );
+    snapshotDirectory = await fs.promises.mkdtemp(
+      path.join(app.getPath("temp"), "wahongshu-page-"),
+    );
+    snapshotPath = path.join(snapshotDirectory, `${item.noteId}.html`);
+    await fs.promises.writeFile(snapshotPath, html, "utf8");
+    onLine?.("已通过登录会话读取笔记页面");
+  } catch (error) {
+    if (signal.aborted) throw error;
+    onLine?.(
+      `登录会话页面读取失败，尝试公开页面：${
+        error instanceof Error ? error.message : String(error)
+      }`,
+    );
+  }
   const packagedCore = path.join(
     process.resourcesPath,
     "downloader",
@@ -310,51 +334,58 @@ async function runPythonDownloader(item, signal, onLine) {
     outputRoot,
     "--timeout",
     "45",
+    ...(snapshotPath ? ["--page-html", snapshotPath] : []),
   ];
   const args = app.isPackaged
     ? downloaderArgs
     : ["-u", developmentCore, ...downloaderArgs];
-  return await new Promise((resolve, reject) => {
-    const worker = spawn(
-      command,
-      args,
-      {
-        cwd: app.isPackaged ? process.resourcesPath : path.join(__dirname, ".."),
-        windowsHide: true,
-        env: { ...process.env, PYTHONIOENCODING: "utf-8" },
-        stdio: ["pipe", "pipe", "pipe"],
-      },
-    );
-    activeWorker = worker;
-    const lines = [];
-    const acceptLine = (line) => {
-      const cleaned = redactWorkerLine(line);
-      if (!cleaned) return;
-      lines.push(cleaned);
-      onLine?.(cleaned);
-    };
-    readline.createInterface({ input: worker.stdout }).on("line", acceptLine);
-    readline.createInterface({ input: worker.stderr }).on("line", acceptLine);
-    const abort = () => worker.kill();
-    signal.addEventListener("abort", abort, { once: true });
-    worker.once("error", (error) => {
-      signal.removeEventListener("abort", abort);
-      if (activeWorker === worker) activeWorker = null;
-      reject(error);
+  try {
+    return await new Promise((resolve, reject) => {
+      const worker = spawn(
+        command,
+        args,
+        {
+          cwd: app.isPackaged ? process.resourcesPath : path.join(__dirname, ".."),
+          windowsHide: true,
+          env: { ...process.env, PYTHONIOENCODING: "utf-8" },
+          stdio: ["pipe", "pipe", "pipe"],
+        },
+      );
+      activeWorker = worker;
+      const lines = [];
+      const acceptLine = (line) => {
+        const cleaned = redactWorkerLine(line);
+        if (!cleaned) return;
+        lines.push(cleaned);
+        onLine?.(cleaned);
+      };
+      readline.createInterface({ input: worker.stdout }).on("line", acceptLine);
+      readline.createInterface({ input: worker.stderr }).on("line", acceptLine);
+      const abort = () => worker.kill();
+      signal.addEventListener("abort", abort, { once: true });
+      worker.once("error", (error) => {
+        signal.removeEventListener("abort", abort);
+        if (activeWorker === worker) activeWorker = null;
+        reject(error);
+      });
+      worker.once("exit", (code) => {
+        signal.removeEventListener("abort", abort);
+        if (activeWorker === worker) activeWorker = null;
+        if (signal.aborted) {
+          reject(new Error("任务已停止"));
+        } else if (code === 0) {
+          resolve({ ok: true });
+        } else {
+          reject(new Error(lines.at(-1) || `下载核心返回代码 ${code}`));
+        }
+      });
+      worker.stdin.end(`${sourceUrl}\n`);
     });
-    worker.once("exit", (code) => {
-      signal.removeEventListener("abort", abort);
-      if (activeWorker === worker) activeWorker = null;
-      if (signal.aborted) {
-        reject(new Error("任务已停止"));
-      } else if (code === 0) {
-        resolve({ ok: true });
-      } else {
-        reject(new Error(lines.at(-1) || `下载核心返回代码 ${code}`));
-      }
-    });
-    worker.stdin.end(`${sourceUrl}\n`);
-  });
+  } finally {
+    if (snapshotDirectory) {
+      await fs.promises.rm(snapshotDirectory, { recursive: true, force: true });
+    }
+  }
 }
 
 async function runTask(limit) {

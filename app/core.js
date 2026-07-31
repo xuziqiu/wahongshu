@@ -223,6 +223,30 @@ function recordQuality(record) {
   }
 }
 
+async function fetchAuthenticatedPage(
+  electronSession,
+  sourceUrl,
+  referer,
+  signal,
+) {
+  const response = await electronSession.fetch(sourceUrl, {
+    headers: {
+      Accept:
+        "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+      Referer: referer || "https://www.xiaohongshu.com/",
+    },
+    signal,
+  });
+  if (!response.ok) {
+    throw new Error(`登录会话读取笔记页面失败（HTTP ${response.status}）`);
+  }
+  const html = await response.text();
+  if (!/window\.__INITIAL_STATE__\s*=/.test(html)) {
+    throw new Error("登录会话返回的页面没有笔记状态");
+  }
+  return html;
+}
+
 function basenameFromContentDisposition(value) {
   const encoded = String(value || "").match(/filename\*=UTF-8''([^;]+)/i);
   if (encoded) {
@@ -446,6 +470,7 @@ module.exports = {
   recordFromPageScript,
   recordFromHtml,
   recordQuality,
+  fetchAuthenticatedPage,
   detectMp4VideoCodec,
   downloadRecord,
   basenameFromContentDisposition,
