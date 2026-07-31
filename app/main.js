@@ -27,6 +27,7 @@ const {
 const { parseCliInvocation, cliUsage } = require("./cli");
 const { createGuiConsoleLogger } = require("./console_logger");
 const { createSessionKeeper } = require("./session_store");
+const { completedNoteIds } = require("./resume");
 const {
   createSettingsStore,
   normalizeZoomPercent,
@@ -445,7 +446,7 @@ async function runPythonDownloader(item, signal, onLine, listUrl = "") {
   }
 }
 
-async function runTask(limit) {
+async function runTask(limit, { resume = false, dryRun = false } = {}) {
   const page = recognizePage(browserView.webContents.getURL());
   if (page.type === "unsupported") throw new Error(page.label);
   const controller = new AbortController();
@@ -487,7 +488,36 @@ async function runTask(limit) {
       }
     }
 
+    const scanned = items.length;
+    let skipped = 0;
+    if (resume && page.type !== "single") {
+      const completed = completedNoteIds(settings.downloadDirectory);
+      items = items.filter(
+        (item) => !completed.has(String(item.noteId || "").toLowerCase()),
+      );
+      skipped = scanned - items.length;
+    }
+
     const total = items.length;
+    setTask({ scanned, skipped, planned: total, total });
+    if (dryRun) {
+      setTask({
+        status: "success",
+        percent: 100,
+        detail: `预演完成：扫描 ${scanned} 篇，跳过 ${skipped} 篇，待下载 ${total} 篇`,
+        finishedAt: Date.now(),
+      });
+      return structuredClone(state.task);
+    }
+    if (!total) {
+      setTask({
+        status: "success",
+        percent: 100,
+        detail: `扫描 ${scanned} 篇，已有完整记录 ${skipped} 篇，无需下载`,
+        finishedAt: Date.now(),
+      });
+      return structuredClone(state.task);
+    }
     for (let index = 0; index < total; index += 1) {
       if (signal.aborted) throw new Error("任务已停止");
       const item = items[index];
@@ -531,8 +561,8 @@ async function runTask(limit) {
       status: failed ? "failed" : "success",
       percent: 100,
       detail: failed
-        ? `完成 ${state.task.completed} 篇，失败 ${failed} 篇`
-        : `已完成 ${state.task.completed} 篇`,
+        ? `完成 ${state.task.completed} 篇，失败 ${failed} 篇，跳过 ${skipped} 篇`
+        : `已完成 ${state.task.completed} 篇，跳过 ${skipped} 篇`,
       error: failures[0]?.error || "",
       failures,
       finishedAt: Date.now(),
@@ -640,13 +670,19 @@ async function runCli(invocation) {
     };
   }
 
-  const result = await runTask(invocation.limit);
+  const result = await runTask(invocation.limit, {
+    resume: invocation.resume,
+    dryRun: invocation.dryRun,
+  });
   stateObserver = null;
   const payload = {
     status: result?.status || "failed",
     sourceType: result?.sourceType || recognizePage(invocation.url).type,
     completed: result?.completed || 0,
     failed: result?.failed || 0,
+    skipped: result?.skipped || 0,
+    scanned: result?.scanned || 0,
+    planned: result?.planned || 0,
     title: result?.currentTitle || "",
     error: result?.error || "",
     failures: result?.failures || [],

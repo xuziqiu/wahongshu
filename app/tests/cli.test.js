@@ -35,6 +35,38 @@ test("parses development Electron arguments after the app directory", () => {
   assert.equal(invocation.limit, 3);
 });
 
+test("parses an explicit batch resume without changing the default", () => {
+  const resumed = parseCliInvocation([
+    "挖红薯.exe",
+    "profile",
+    "--resume",
+    "--dry-run",
+    "https://www.xiaohongshu.com/user/profile/test",
+  ]);
+  const normal = parseCliInvocation([
+    "挖红薯.exe",
+    "profile",
+    "https://www.xiaohongshu.com/user/profile/test",
+  ]);
+  assert.equal(resumed.resume, true);
+  assert.equal(resumed.dryRun, true);
+  assert.equal(normal.resume, false);
+  assert.equal(normal.dryRun, false);
+});
+
+test("rejects resume for a single-note command", () => {
+  assert.throws(
+    () =>
+      parseCliInvocation([
+        "挖红薯.exe",
+        "download",
+        "--resume",
+        "https://www.xiaohongshu.com/explore/test",
+      ]),
+    /只适用于博主主页和收藏页/,
+  );
+});
+
 test("parses an output directory as one Electron-safe argument", () => {
   const invocation = parseCliInvocation([
     "挖红薯.exe",

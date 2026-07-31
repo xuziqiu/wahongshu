@@ -6,8 +6,8 @@ function cliUsage() {
   return [
     "挖红薯命令行用法：",
     "  挖红薯.exe download <小红书链接> [--limit 3] [--output-dir=<目录>] [--json]",
-    "  挖红薯.exe profile <博主主页链接> [--limit 3] [--output-dir=<目录>] [--json]",
-    "  挖红薯.exe favorites <收藏页链接> [--limit 3] [--output-dir=<目录>] [--json]",
+    "  挖红薯.exe profile <博主主页链接> [--limit 3] [--resume] [--dry-run] [--output-dir=<目录>] [--json]",
+    "  挖红薯.exe favorites <收藏页链接> [--limit 3] [--resume] [--dry-run] [--output-dir=<目录>] [--json]",
     "  挖红薯.exe --help",
     "  挖红薯.exe --version",
     "",
@@ -31,10 +31,16 @@ function parseCliInvocation(argv, defaultApp = false) {
   let limit = 3;
   let outputDirectory = "";
   let json = false;
+  let resume = false;
+  let dryRun = false;
   for (let index = 1; index < args.length; index += 1) {
     const value = args[index];
     if (value === "--json") {
       json = true;
+    } else if (value === "--resume") {
+      resume = true;
+    } else if (value === "--dry-run") {
+      dryRun = true;
     } else if (value === "--limit") {
       const parsed = Number(args[++index]);
       if (!Number.isInteger(parsed) || parsed < 1 || parsed > 1000) {
@@ -56,7 +62,10 @@ function parseCliInvocation(argv, defaultApp = false) {
     }
   }
   if (!url) throw new Error(`${command} 命令需要一个小红书链接`);
-  return { command, url, limit, outputDirectory, json };
+  if ((resume || dryRun) && command === "download") {
+    throw new Error("--resume 和 --dry-run 只适用于博主主页和收藏页批量任务");
+  }
+  return { command, url, limit, outputDirectory, json, resume, dryRun };
 }
 
 module.exports = {
