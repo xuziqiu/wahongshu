@@ -17,7 +17,7 @@ const {
   normalizeNavigationUrl,
   noteUrl,
   collectLinksScript,
-  fetchAuthenticatedPage,
+  extractNoteScript,
 } = require("./core");
 const { createSessionKeeper } = require("./session_store");
 const {
@@ -77,6 +77,7 @@ let mainWindow = null;
 let browserView = null;
 let taskController = null;
 let activeWorker = null;
+let activePageWindow = null;
 let sessionKeeper = null;
 let quitPrepared = false;
 let quitPreparing = false;
@@ -288,31 +289,98 @@ function redactWorkerLine(value) {
     .trim();
 }
 
+async function loadRenderedNoteSnapshot(item, signal, onLine) {
+  const sourceUrl = item.url || noteUrl(item.noteId, item.xsecToken);
+  const pageWindow = new BrowserWindow({
+    show: false,
+    width: 1280,
+    height: 900,
+    webPreferences: {
+      partition: PARTITION,
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+      backgroundThrottling: false,
+    },
+  });
+  activePageWindow = pageWindow;
+  pageWindow.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
+  const abort = () => {
+    if (!pageWindow.isDestroyed()) pageWindow.destroy();
+  };
+  signal.addEventListener("abort", abort, { once: true });
+  try {
+    let loadTimer;
+    try {
+      await Promise.race([
+        pageWindow.loadURL(sourceUrl),
+        new Promise((_, reject) => {
+          loadTimer = setTimeout(
+            () => reject(new Error("登录浏览器打开笔记超时")),
+            30000,
+          );
+        }),
+      ]);
+    } finally {
+      clearTimeout(loadTimer);
+    }
+
+    const started = Date.now();
+    let serialized = null;
+    while (Date.now() - started < 20000) {
+      if (signal.aborted || pageWindow.isDestroyed()) {
+        throw new Error("任务已停止");
+      }
+      try {
+        serialized = await pageWindow.webContents.executeJavaScript(
+          extractNoteScript(item.noteId),
+        );
+      } catch (error) {
+        if (pageWindow.isDestroyed()) throw error;
+      }
+      if (serialized) break;
+      await wait(500);
+    }
+    if (!serialized) {
+      throw new Error(`登录浏览器没有加载出笔记 ${item.noteId} 的详情`);
+    }
+    const note = JSON.parse(serialized);
+    const returnedId = String(note.noteId || note.note_id || "").toLowerCase();
+    if (returnedId && returnedId !== item.noteId.toLowerCase()) {
+      throw new Error("登录浏览器返回了错误的笔记详情");
+    }
+    onLine?.("已从登录浏览器加载笔记详情");
+    return `window.__INITIAL_STATE__=${JSON.stringify({
+      note: {
+        noteDetailMap: {
+          [item.noteId]: { note },
+        },
+      },
+    })}`;
+  } finally {
+    signal.removeEventListener("abort", abort);
+    if (!pageWindow.isDestroyed()) pageWindow.destroy();
+    if (activePageWindow === pageWindow) activePageWindow = null;
+  }
+}
+
 async function runPythonDownloader(item, signal, onLine) {
   const sourceUrl = item.url || noteUrl(item.noteId, item.xsecToken);
   const outputRoot = settings.downloadDirectory;
   let snapshotDirectory = null;
   let snapshotPath = null;
   try {
-    const html = await fetchAuthenticatedPage(
-      browserView.webContents.session,
-      sourceUrl,
-      browserView.webContents.getURL(),
-      signal,
-    );
+    const html = await loadRenderedNoteSnapshot(item, signal, onLine);
     snapshotDirectory = await fs.promises.mkdtemp(
       path.join(app.getPath("temp"), "wahongshu-page-"),
     );
     snapshotPath = path.join(snapshotDirectory, `${item.noteId}.html`);
     await fs.promises.writeFile(snapshotPath, html, "utf8");
-    onLine?.("已通过登录会话读取笔记页面");
   } catch (error) {
-    if (signal.aborted) throw error;
-    onLine?.(
-      `登录会话页面读取失败，尝试公开页面：${
-        error instanceof Error ? error.message : String(error)
-      }`,
-    );
+    if (snapshotDirectory) {
+      await fs.promises.rm(snapshotDirectory, { recursive: true, force: true });
+    }
+    throw error;
   }
   const packagedCore = path.join(
     process.resourcesPath,
@@ -532,6 +600,9 @@ function registerIpc() {
   ipcMain.handle("wahongshu:cancel", () => {
     taskController?.abort();
     activeWorker?.kill();
+    if (activePageWindow && !activePageWindow.isDestroyed()) {
+      activePageWindow.destroy();
+    }
     return { ok: true };
   });
   ipcMain.handle("wahongshu:open-downloads", () =>
@@ -604,6 +675,9 @@ app.on("window-all-closed", () => {
 app.on("before-quit", (event) => {
   taskController?.abort();
   activeWorker?.kill();
+  if (activePageWindow && !activePageWindow.isDestroyed()) {
+    activePageWindow.destroy();
+  }
   if (quitPrepared || !sessionKeeper) return;
   event.preventDefault();
   if (quitPreparing) return;

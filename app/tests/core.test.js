@@ -12,7 +12,6 @@ const {
   extractNoteScript,
   recordFromPageScript,
   recordQuality,
-  fetchAuthenticatedPage,
   detectMp4VideoCodec,
   downloadRecord,
 } = require("../core");
@@ -235,44 +234,6 @@ test("rates original page script with Live streams above a static runtime card",
     staticRecord.sourceUrl,
   );
   assert(recordQuality(sourceRecord) > recordQuality(staticRecord));
-});
-
-test("reads a note page through the authenticated Electron session", async () => {
-  const calls = [];
-  const html = "<script>window.__INITIAL_STATE__ = {}</script>";
-  const electronSession = {
-    async fetch(url, options) {
-      calls.push({ url, options });
-      return new Response(html, {
-        status: 200,
-        headers: { "Content-Type": "text/html" },
-      });
-    },
-  };
-  const result = await fetchAuthenticatedPage(
-    electronSession,
-    "https://www.xiaohongshu.com/explore/6a5c69ab000000000f02b320",
-    "https://www.xiaohongshu.com/user/profile/test?tab=fav",
-    new AbortController().signal,
-  );
-  assert.equal(result, html);
-  assert.equal(calls.length, 1);
-  assert.equal(
-    calls[0].options.headers.Referer,
-    "https://www.xiaohongshu.com/user/profile/test?tab=fav",
-  );
-});
-
-test("rejects an authenticated page that has no note state", async () => {
-  await assert.rejects(
-    fetchAuthenticatedPage(
-      { fetch: async () => new Response("<html>login</html>") },
-      "https://www.xiaohongshu.com/explore/6a5c69ab000000000f02b320",
-      "https://www.xiaohongshu.com/",
-      new AbortController().signal,
-    ),
-    /没有笔记状态/,
-  );
 });
 
 test("rejects the ef51 experimental track marker as non-H.264", () => {
