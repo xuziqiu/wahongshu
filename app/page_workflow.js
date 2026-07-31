@@ -25,6 +25,31 @@ async function waitForRenderedNote(
   throw new Error(`浏览器没有加载出笔记 ${noteId} 的详情`);
 }
 
+async function openStandaloneNotePage(contents, noteId, signal) {
+  if (signal.aborted) throw new Error("任务已停止");
+  const currentUrl = contents.getURL();
+  assertAccessiblePage(currentUrl);
+  let pageNoteId = "";
+  try {
+    pageNoteId =
+      new URL(currentUrl).pathname.match(
+        /\/(?:explore|discovery\/item|search_result)\/([0-9a-f]{24})/i,
+      )?.[1]?.toLowerCase() || "";
+  } catch {}
+  if (pageNoteId !== noteId.toLowerCase()) {
+    throw new Error(`当前页面不是笔记 ${noteId}`);
+  }
+
+  // Clicking a card opens a SPA modal while document.outerHTML still contains
+  // the list page's original __INITIAL_STATE__. A full navigation to the same
+  // URL makes the server return a standalone note document with complete media
+  // state for the downloader snapshot.
+  await contents.loadURL(currentUrl);
+  if (signal.aborted) throw new Error("任务已停止");
+  assertAccessiblePage(contents.getURL());
+  return contents.getURL();
+}
+
 async function resolveBatchNoteUrl(
   contents,
   listUrl,
@@ -71,6 +96,7 @@ async function resolveBatchNoteUrl(
 }
 
 module.exports = {
+  openStandaloneNotePage,
   resolveBatchNoteUrl,
   waitForRenderedNote,
 };

@@ -2,12 +2,37 @@ const assert = require("node:assert/strict");
 const test = require("node:test");
 
 const {
+  openStandaloneNotePage,
   resolveBatchNoteUrl,
   waitForRenderedNote,
 } = require("../page_workflow");
 
 const NOTE_ID = "6a5c69ab000000000f02b320";
 const LIST_URL = "https://www.xiaohongshu.com/user/profile/test?tab=fav";
+
+test("reloads a modal note URL as a standalone document", async () => {
+  const url = `https://www.xiaohongshu.com/explore/${NOTE_ID}?xsec_token=secret`;
+  const loaded = [];
+  const contents = {
+    url,
+    getURL() {
+      return this.url;
+    },
+    async loadURL(nextUrl) {
+      loaded.push(nextUrl);
+      this.url = nextUrl;
+    },
+  };
+
+  const result = await openStandaloneNotePage(
+    contents,
+    NOTE_ID,
+    new AbortController().signal,
+  );
+
+  assert.equal(result, url);
+  assert.deepEqual(loaded, [url]);
+});
 
 test("resolves the requested card URL and reads the matching note state", async () => {
   let resolveAttempts = 0;

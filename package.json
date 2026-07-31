@@ -1,6 +1,6 @@
 {
   "name": "wahongshu",
-  "version": "1.0.5",
+  "version": "1.1.0",
   "private": true,
   "description": "挖红薯：带内置浏览器的小红书媒体下载与备份工具",
   "author": "XUZIQIU",
@@ -24,6 +24,7 @@
   "build": {
     "appId": "cn.wahongshu.downloader",
     "productName": "挖红薯",
+    "afterPack": "scripts/after_pack.js",
     "asar": true,
     "files": [
       "app/**/*",

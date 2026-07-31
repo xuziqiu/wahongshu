@@ -20,9 +20,11 @@ const {
   cleanPageTitle,
 } = require("./core");
 const {
+  openStandaloneNotePage,
   resolveBatchNoteUrl,
   waitForRenderedNote,
 } = require("./page_workflow");
+const { parseCliInvocation, cliUsage } = require("./cli");
 const { createSessionKeeper } = require("./session_store");
 const {
   createSettingsStore,
@@ -82,6 +84,8 @@ let browserView = null;
 let taskController = null;
 let activeWorker = null;
 let sessionKeeper = null;
+let cliWindow = null;
+let stateObserver = null;
 let quitPrepared = false;
 let quitPreparing = false;
 let state = {
@@ -112,6 +116,7 @@ function publicState() {
 }
 
 function broadcast() {
+  stateObserver?.(publicState());
   if (mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.webContents.send("wahongshu:state", publicState());
   }
@@ -320,6 +325,9 @@ async function loadRenderedNoteSnapshot(item, signal, onLine, listUrl = "") {
       );
     }
     await contents.loadURL(resolvedUrl);
+  } else {
+    onLine?.("正在打开当前笔记的完整页面…");
+    await openStandaloneNotePage(contents, item.noteId, signal);
   }
   await waitForRenderedNote(
     contents,
@@ -377,6 +385,8 @@ async function runPythonDownloader(item, signal, onLine, listUrl = "") {
     outputRoot,
     "--timeout",
     "45",
+    "--title-fallback",
+    item.title || "",
     ...(snapshotPath ? ["--page-html", snapshotPath] : []),
   ];
   const args = app.isPackaged
@@ -543,6 +553,112 @@ async function runTask(limit) {
       updateBrowserState();
     }
   }
+  return structuredClone(state.task);
+}
+
+function writeCli(stream, value) {
+  try {
+    stream.write(`${value}\n`);
+  } catch {}
+}
+
+async function createCliBrowser(targetUrl) {
+  cliWindow = new BrowserWindow({
+    show: false,
+    width: 1280,
+    height: 900,
+    webPreferences: {
+      partition: PARTITION,
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+      backgroundThrottling: false,
+    },
+  });
+  configureGuest(cliWindow.webContents);
+  browserView = { webContents: cliWindow.webContents };
+  await cliWindow.loadURL(targetUrl);
+}
+
+async function runCli(invocation) {
+  if (invocation.parseError) throw new Error(invocation.parseError);
+  if (invocation.help) {
+    writeCli(process.stdout, cliUsage());
+    return 0;
+  }
+  if (invocation.version) {
+    writeCli(process.stdout, app.getVersion());
+    return 0;
+  }
+  if (invocation.outputDirectory) {
+    settings = {
+      ...settings,
+      downloadDirectory: path.resolve(invocation.outputDirectory),
+    };
+  }
+  fs.mkdirSync(settings.downloadDirectory, { recursive: true });
+  const targetUrl = normalizeNavigationUrl(invocation.url);
+  await createCliBrowser(targetUrl);
+  const loadedPage = recognizePage(cliWindow.webContents.getURL());
+  const expectedPageType = {
+    download: "single",
+    profile: "profile",
+    favorites: "favorites",
+  }[invocation.command];
+  if (loadedPage.type !== expectedPageType) {
+    throw new Error(
+      `${invocation.command} 命令需要${
+        expectedPageType === "single"
+          ? "单篇笔记"
+          : expectedPageType === "profile"
+            ? "博主主页"
+            : "收藏页"
+      }链接；当前识别为“${loadedPage.label}”`,
+    );
+  }
+
+  let lastLine = "";
+  if (!invocation.json) {
+    stateObserver = (snapshot) => {
+      const task = snapshot.task;
+      if (!task) return;
+      const line = [
+        task.status,
+        `${task.percent || 0}%`,
+        task.currentTitle || task.detail || "",
+      ]
+        .filter(Boolean)
+        .join(" | ");
+      if (line && line !== lastLine) {
+        lastLine = line;
+        writeCli(process.stderr, line);
+      }
+    };
+  }
+
+  const result = await runTask(invocation.limit);
+  stateObserver = null;
+  const payload = {
+    status: result?.status || "failed",
+    sourceType: result?.sourceType || recognizePage(invocation.url).type,
+    completed: result?.completed || 0,
+    failed: result?.failed || 0,
+    title: result?.currentTitle || "",
+    error: result?.error || "",
+    failures: result?.failures || [],
+    outputDirectory: settings.downloadDirectory,
+  };
+  if (invocation.json) {
+    writeCli(process.stdout, JSON.stringify(payload));
+  } else {
+    writeCli(
+      process.stdout,
+      payload.status === "success"
+        ? `完成：${payload.completed} 篇，保存到 ${payload.outputDirectory}`
+        : `失败：${payload.error || payload.failures[0]?.error || "未知错误"}`,
+    );
+  }
+  return payload.status === "success" ? 0 : 1;
 }
 
 function registerIpc() {
@@ -632,8 +748,21 @@ function registerIpc() {
   );
 }
 
+let cliInvocation = null;
+try {
+  cliInvocation = parseCliInvocation(
+    process.argv,
+    Boolean(process.defaultApp),
+  );
+} catch (error) {
+  cliInvocation = {
+    parseError: error instanceof Error ? error.message : String(error),
+    json: process.argv.includes("--json"),
+  };
+}
+
 app.whenReady().then(async () => {
-  registerIpc();
+  if (!cliInvocation) registerIpc();
   const xhsSession = session.fromPartition(PARTITION);
   sessionKeeper = createSessionKeeper({
     electronSession: xhsSession,
@@ -649,6 +778,34 @@ app.whenReady().then(async () => {
   xhsSession.setPermissionRequestHandler((_contents, permission, callback) => {
     callback(["clipboard-sanitized-write", "fullscreen"].includes(permission));
   });
+  if (cliInvocation) {
+    let exitCode = 1;
+    try {
+      exitCode = await runCli(cliInvocation);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (cliInvocation.json) {
+        writeCli(
+          process.stdout,
+          JSON.stringify({
+            status: "failed",
+            completed: 0,
+            failed: 1,
+            error: message,
+            outputDirectory: settings.downloadDirectory,
+          }),
+        );
+      } else {
+        writeCli(process.stderr, `失败：${message}`);
+      }
+    }
+    await sessionKeeper.flush().catch(() => {});
+    if (cliWindow && !cliWindow.isDestroyed()) cliWindow.destroy();
+    await wait(100);
+    quitPrepared = true;
+    app.exit(exitCode);
+    return;
+  }
   await createMainWindow();
 });
 

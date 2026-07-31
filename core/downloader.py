@@ -90,6 +90,10 @@ def safe_filename(value: str, fallback: str = "无标题", max_length: int = 80)
     return value or fallback
 
 
+def resolve_note_title(note: dict[str, Any], fallback: str = "") -> str:
+    return str(note.get("title") or "").strip() or str(fallback or "").strip()
+
+
 def fetch(url: str, referer: str, timeout: int, attempts: int = 3) -> ResponseData:
     last_error: Exception | None = None
     for attempt in range(attempts):
@@ -847,6 +851,11 @@ def main(argv: list[str] | None = None) -> int:
             "extension instead of requesting the note page again."
         ),
     )
+    parser.add_argument(
+        "--title-fallback",
+        default="",
+        help="Use this title when the page state leaves note.title empty.",
+    )
     parser.add_argument("--timeout", type=int, default=45)
     args = parser.parse_args(argv)
 
@@ -869,7 +878,7 @@ def main(argv: list[str] | None = None) -> int:
         page_final_url = page.final_url
     state = parse_initial_state(html)
     note = find_note(state, note_id)
-    title = str(note.get("title") or "").strip()
+    title = resolve_note_title(note, args.title_fallback)
     safe_title = safe_filename(title)
     output_dir = (
         args.out

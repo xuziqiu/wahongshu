@@ -8,6 +8,7 @@ from core.downloader import (
     download_live_photo,
     download_note_video,
     find_note,
+    resolve_note_title,
 )
 
 
@@ -26,6 +27,10 @@ EF51_MP4 = b"\x00\x00\x00\x18ftypisomef51" + b"video"
 
 
 class DownloadCoreTests(unittest.TestCase):
+    def test_title_fallback_is_used_only_when_page_title_is_empty(self):
+        self.assertEqual(resolve_note_title({"title": "页面标题"}, "后备标题"), "页面标题")
+        self.assertEqual(resolve_note_title({"title": ""}, "后备标题"), "后备标题")
+
     def test_find_note_prefers_complete_live_detail_over_static_card_copy(self):
         note_id = "6a5c69ab000000000f02b320"
         static_copy = {
