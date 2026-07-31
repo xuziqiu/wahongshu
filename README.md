@@ -53,7 +53,7 @@
 图形界面适合日常使用，不需要准备 Python、Node.js 或额外的主程序目录。
 
 1. 从 [GitHub Releases](https://github.com/xuziqiu/wahongshu/releases/latest)
-   下载 `挖红薯-<版本>.exe`，双击运行。
+   下载 `WaHongShu-<版本>.exe`，双击运行。
 2. 第一次使用时，在内置浏览器中登录小红书。登录状态会保存在本机，之后无需
    每次重新登录。
 3. 在内置浏览器中打开单篇笔记、博主主页或“我的收藏”。也可以把从其他地方
@@ -83,24 +83,24 @@ CLI 与图形界面共用登录状态、下载目录和下载核心，因此第�
 
 ```powershell
 # 查看帮助和版本
-& ".\挖红薯-1.1.1.exe" --help
-& ".\挖红薯-1.1.1.exe" --version
+& ".\WaHongShu-1.1.1.exe" --help
+& ".\WaHongShu-1.1.1.exe" --version
 
 # 下载单篇笔记
-& ".\挖红薯-1.1.1.exe" download "<小红书笔记链接>"
+& ".\WaHongShu-1.1.1.exe" download "<小红书笔记链接>"
 
 # 下载博主主页前 5 篇
-& ".\挖红薯-1.1.1.exe" profile "<博主主页链接>" --limit 5
+& ".\WaHongShu-1.1.1.exe" profile "<博主主页链接>" --limit 5
 
 # 下载“我的收藏”前 3 篇
-& ".\挖红薯-1.1.1.exe" favorites "<收藏页链接>" --limit 3
+& ".\WaHongShu-1.1.1.exe" favorites "<收藏页链接>" --limit 3
 
 # 本次任务临时指定保存位置，不修改图形界面中的偏好设置
-& ".\挖红薯-1.1.1.exe" download "<小红书笔记链接>" `
+& ".\WaHongShu-1.1.1.exe" download "<小红书笔记链接>" `
   "--output-dir=D:\Media\挖红薯"
 
 # 输出单行 JSON，方便脚本或 AI 读取
-& ".\挖红薯-1.1.1.exe" profile "<博主主页链接>" `
+& ".\WaHongShu-1.1.1.exe" profile "<博主主页链接>" `
   --limit 5 --json
 ```
 
@@ -145,7 +145,7 @@ CLI 与图形界面共用登录状态、下载目录和下载核心，因此第�
 校验文件，可在 PowerShell 中核对：
 
 ```powershell
-Get-FileHash -Algorithm SHA256 ".\挖红薯-1.1.1.exe"
+Get-FileHash -Algorithm SHA256 ".\WaHongShu-1.1.1.exe"
 ```
 
 输出应与同一 Release 中 `.exe.sha256` 文件记录的值一致。
