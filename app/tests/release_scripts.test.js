@@ -35,3 +35,35 @@ test("finalizes the portable launcher and writes its checksum", () => {
     fs.rmSync(projectRoot, { force: true, recursive: true });
   }
 });
+
+test("can give GitHub release assets an ASCII filename", () => {
+  const projectRoot = fs.mkdtempSync(path.join(os.tmpdir(), "wahongshu-release-"));
+  try {
+    const releaseRoot = path.join(projectRoot, "release");
+    fs.mkdirSync(releaseRoot);
+    fs.writeFileSync(
+      path.join(projectRoot, "package.json"),
+      JSON.stringify({ version: "1.2.3" }),
+    );
+
+    const builtPath = path.join(releaseRoot, "挖红薯-1.2.3.exe");
+    const bytes = Buffer.alloc(512);
+    bytes[0] = 0x4d;
+    bytes[1] = 0x5a;
+    bytes.writeInt32LE(0x80, 0x3c);
+    fs.writeFileSync(builtPath, bytes);
+
+    const result = finalizeRelease({
+      artifactBaseName: "WaHongShu",
+      projectRoot,
+    });
+    assert.equal(path.basename(result.executablePath), "WaHongShu-1.2.3.exe");
+    assert.equal(fs.existsSync(builtPath), false);
+    assert.equal(
+      fs.readFileSync(result.checksumPath, "utf8"),
+      `${result.hash}  WaHongShu-1.2.3.exe\r\n`,
+    );
+  } finally {
+    fs.rmSync(projectRoot, { force: true, recursive: true });
+  }
+});

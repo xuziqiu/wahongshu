@@ -8,13 +8,20 @@ function sha256File(filePath) {
   return crypto.createHash("sha256").update(fs.readFileSync(filePath)).digest("hex");
 }
 
-function finalizeRelease({ projectRoot = path.resolve(__dirname, "..") } = {}) {
+function finalizeRelease({
+  projectRoot = path.resolve(__dirname, ".."),
+  artifactBaseName = process.env.WAHONGSHU_RELEASE_BASENAME || "挖红薯",
+} = {}) {
   const { version } = require(path.join(projectRoot, "package.json"));
   const releaseRoot = path.join(projectRoot, "release");
-  const executableName = `挖红薯-${version}.exe`;
+  const builtExecutablePath = path.join(releaseRoot, `挖红薯-${version}.exe`);
+  if (!fs.existsSync(builtExecutablePath)) {
+    throw new Error(`Portable executable was not produced: ${builtExecutablePath}`);
+  }
+  const executableName = `${artifactBaseName}-${version}.exe`;
   const executablePath = path.join(releaseRoot, executableName);
-  if (!fs.existsSync(executablePath)) {
-    throw new Error(`Portable executable was not produced: ${executablePath}`);
+  if (executablePath !== builtExecutablePath) {
+    fs.renameSync(builtExecutablePath, executablePath);
   }
 
   // electron-builder creates a GUI-subsystem portable launcher. The product
