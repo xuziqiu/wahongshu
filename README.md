@@ -1,0 +1,84 @@
+# 挖红薯
+
+挖红薯是一款带内置浏览器的 Windows 小红书媒体下载与个人备份工具。用户在
+内置页面登录后，可以下载单篇笔记，也可以按指定数量处理博主主页或个人收藏。
+
+> 本项目不是小红书官方产品。请只保存自己拥有、已获授权或法律允许使用的
+> 内容，并阅读 [使用说明与免责声明](./DISCLAIMER.md)。
+
+## 功能
+
+- 内置小红书浏览器，登录会话在本机使用 Windows 系统加密保存。
+- 地址栏支持完整链接、无协议链接和 `xhslink.com` 分享短链接。
+- 下载单篇图片笔记、Live Photo 静态图与视频部分、普通视频。
+- 从博主主页或“我的收藏”按页面顺序下载准确数量的笔记。
+- 图片优先获取无转换参数的 `ci` 主资源，失败时才使用备用地址。
+- 视频优先选择最高质量且兼容播放器的 H.264 公开流。
+- 每次任务均重新下载，不根据历史记录跳过内容。
+
+这里的“最佳公开资源”不等于发布者上传前的本地原文件。格式、元数据和画质
+取决于小红书页面当时公开提供的媒体对象。
+
+## 使用便携版
+
+从 GitHub Releases 下载 `挖红薯-<版本>.exe`，双击即可运行。程序无需另外安装
+Python，也无需保留源码目录。下载内容保存在 Windows 默认下载目录下的
+`挖红薯` 文件夹。
+
+由于当前便携版没有商业代码签名，Windows SmartScreen 可能显示未知发布者。
+公开发布前应核对下载来源和文件哈希。
+
+## 从源码运行
+
+开发环境需要 Node.js、npm、Python 3.11 或更高版本：
+
+```powershell
+npm ci
+npm start
+```
+
+运行全部测试：
+
+```powershell
+npm test
+```
+
+构建自包含 Windows 便携版：
+
+```powershell
+python -m pip install pyinstaller
+npm run dist:local
+```
+
+本地构建脚本会在纯英文的 Windows 临时目录中完成封装，以避开部分打包工具对
+中文工作区路径的兼容问题。成品及 SHA-256 会生成在 [`release`](./release)
+目录。Python 下载核心先由 PyInstaller 封装，再作为 Electron 资源装入同一个
+便携版可执行文件。
+
+## 项目结构
+
+```text
+app/                 Electron 桌面程序、内置浏览器和界面
+core/downloader.py   实际处理每篇笔记的 Python 下载核心
+tests/               Python 下载核心测试
+app/tests/           桌面端与会话保存测试
+.github/workflows/   GitHub CI 与标签发布流程
+release/             本地构建成品；二进制不提交到 Git
+```
+
+本地工作区可能另有两个被 Git 忽略的目录：
+
+- `archive/`：开发过程中产生的旧扩展、旧网页界面和实验脚本。
+- `local-data/`：浏览器测试资料、登录配置和测试下载，不得上传。
+
+## 隐私与安全
+
+- 登录 Cookie 不写入日志；会话备份使用 Electron `safeStorage` 调用 Windows
+  系统加密。
+- 链接中的 `xsec_token` 等访问参数在 manifest 中会被遮盖。
+- 内置地址栏只允许打开小红书及其分享短链域名。
+- 程序不上传下载历史、Cookie 或媒体文件。
+
+## 开源协议
+
+源码采用 [MIT License](./LICENSE)。

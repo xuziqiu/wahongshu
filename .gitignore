@@ -1,0 +1,15 @@
+node_modules/
+build/
+archive/
+local-data/
+
+release/*
+!release/README.md
+
+__pycache__/
+*.pyc
+*.pyo
+*.spec
+*.log
+.env
+.DS_Store

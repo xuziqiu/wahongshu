@@ -1,0 +1,50 @@
+{
+  "name": "wahongshu",
+  "version": "1.0.0",
+  "private": true,
+  "description": "挖红薯：带内置浏览器的小红书媒体下载与备份工具",
+  "author": "XUZIQIU",
+  "license": "MIT",
+  "main": "app/main.js",
+  "scripts": {
+    "start": "electron .",
+    "test:node": "node --test app/tests/*.test.js",
+    "test:python": "python -m unittest discover -s tests -p \"test_*.py\"",
+    "test": "npm run test:node && npm run test:python",
+    "check": "npm test",
+    "build:core": "python -m PyInstaller --noconfirm --clean --onefile --name wahongshu-core --distpath build/core --workpath build/pyinstaller --specpath build/pyinstaller core/downloader.py",
+    "pack": "npm run build:core && electron-builder --dir",
+    "dist": "npm test && npm run build:core && electron-builder --win portable",
+    "dist:local": "powershell -ExecutionPolicy Bypass -File scripts/build_release.ps1"
+  },
+  "devDependencies": {
+    "electron": "43.2.0",
+    "electron-builder": "26.15.3"
+  },
+  "build": {
+    "appId": "cn.wahongshu.downloader",
+    "productName": "挖红薯",
+    "asar": true,
+    "files": [
+      "app/**/*",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "build/core/wahongshu-core.exe",
+        "to": "downloader/wahongshu-core.exe"
+      }
+    ],
+    "directories": {
+      "output": "release"
+    },
+    "win": {
+      "executableName": "挖红薯",
+      "icon": "app/assets/icon.ico",
+      "target": [
+        "portable"
+      ],
+      "artifactName": "挖红薯-${version}.${ext}"
+    }
+  }
+}

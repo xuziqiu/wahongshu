@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0"
+    />
+    <title>挖红薯</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <header class="toolbar">
+      <div class="brand">
+        <img class="brand-mark" src="../assets/icon.png" alt="" />
+        <div>
+          <strong>挖红薯</strong>
+          <small>小红书媒体采收工具</small>
+        </div>
+      </div>
+      <nav class="browser-actions" aria-label="浏览器操作">
+        <button id="back" title="后退">←</button>
+        <button id="forward" title="前进">→</button>
+        <button id="reload" title="刷新">↻</button>
+        <button id="home" title="小红书首页">⌂</button>
+      </nav>
+      <div class="address">
+        <span class="secure">●</span>
+        <input
+          id="address-input"
+          type="text"
+          aria-label="小红书地址"
+          autocomplete="off"
+          spellcheck="false"
+          value="正在打开小红书…"
+        />
+        <button id="go" type="button" title="打开输入的链接">前往</button>
+      </div>
+      <button id="devtools" class="quiet" title="打开内置页面开发工具">
+        调试
+      </button>
+    </header>
+
+    <aside class="panel">
+      <section class="intro">
+        <span id="page-badge" class="badge">正在识别</span>
+        <h1 id="page-title">正在读取当前页面</h1>
+        <p id="page-help">
+          登录状态只保存在挖红薯自己的浏览器会话中。
+        </p>
+      </section>
+
+      <section id="options" class="card">
+        <label id="limit-label" for="limit">下载前多少篇</label>
+        <div id="limit-row" class="number-row">
+          <button id="minus" aria-label="减少">−</button>
+          <input id="limit" type="number" min="1" max="1000" value="3" />
+          <button id="plus" aria-label="增加">＋</button>
+        </div>
+        <button id="start" class="primary" disabled>等待页面识别</button>
+      </section>
+
+      <section id="task" class="task hidden" aria-live="polite">
+        <div class="task-heading">
+          <div>
+            <span id="task-state">准备中</span>
+            <strong id="task-title">当前任务</strong>
+          </div>
+          <span id="task-percent">0%</span>
+        </div>
+        <div class="progress"><i id="progress-bar"></i></div>
+        <p id="task-detail">正在准备…</p>
+        <p id="task-error" class="error hidden"></p>
+        <button id="cancel" class="danger">停止任务</button>
+      </section>
+
+      <footer>
+        <button id="downloads" class="folder">打开下载目录</button>
+        <p>文件保存到 Windows 下载目录中的“挖红薯”文件夹。</p>
+      </footer>
+    </aside>
+
+    <script src="renderer.js"></script>
+  </body>
+</html>
