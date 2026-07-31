@@ -5,6 +5,7 @@ const readline = require("node:readline");
 const {
   app,
   BrowserWindow,
+  dialog,
   WebContentsView,
   ipcMain,
   safeStorage,
@@ -18,6 +19,10 @@ const {
   collectLinksScript,
 } = require("./core");
 const { createSessionKeeper } = require("./session_store");
+const {
+  createSettingsStore,
+  normalizeZoomPercent,
+} = require("./settings_store");
 
 const PRODUCT_NAME = "挖红薯";
 const PARTITION = "persist:wahongshu-xhs";
@@ -57,6 +62,15 @@ const SESSION_BACKUP_PATH = path.join(
   app.getPath("userData"),
   "xhs-session.bin",
 );
+const DEFAULT_DOWNLOAD_DIRECTORY = path.join(
+  app.getPath("downloads"),
+  PRODUCT_NAME,
+);
+const settingsStore = createSettingsStore({
+  filePath: path.join(app.getPath("userData"), "settings.json"),
+  defaultDownloadDirectory: DEFAULT_DOWNLOAD_DIRECTORY,
+});
+let settings = settingsStore.load();
 
 let mainWindow = null;
 let browserView = null;
@@ -81,7 +95,15 @@ const wait = (milliseconds) =>
   new Promise((resolve) => setTimeout(resolve, milliseconds));
 
 function publicState() {
-  return structuredClone(state);
+  return structuredClone({
+    ...state,
+    preferences: {
+      downloadDirectory: settings.downloadDirectory,
+      defaultDownloadDirectory: DEFAULT_DOWNLOAD_DIRECTORY,
+      browserZoomPercent: settings.browserZoomPercent,
+      userDataDirectory: app.getPath("userData"),
+    },
+  });
 }
 
 function broadcast() {
@@ -128,6 +150,34 @@ function layoutViews() {
   });
 }
 
+function setBrowserZoomPercent(value) {
+  settings = settingsStore.save({
+    ...settings,
+    browserZoomPercent: normalizeZoomPercent(value),
+  });
+  if (browserView && !browserView.webContents.isDestroyed()) {
+    browserView.webContents.setZoomFactor(settings.browserZoomPercent / 100);
+  }
+  broadcast();
+  return settings.browserZoomPercent;
+}
+
+function registerZoomShortcuts(contents) {
+  contents.on("before-input-event", (event, input) => {
+    if (input.type !== "keyDown" || !(input.control || input.meta)) return;
+    if (["+", "=", "Add"].includes(input.key)) {
+      event.preventDefault();
+      setBrowserZoomPercent(settings.browserZoomPercent + 10);
+    } else if (["-", "Subtract"].includes(input.key)) {
+      event.preventDefault();
+      setBrowserZoomPercent(settings.browserZoomPercent - 10);
+    } else if (input.key === "0") {
+      event.preventDefault();
+      setBrowserZoomPercent(100);
+    }
+  });
+}
+
 function configureGuest(contents) {
   contents.setWindowOpenHandler(({ url }) => {
     if (/^https:\/\/(?:www\.)?xiaohongshu\.com\//i.test(url)) {
@@ -155,6 +205,7 @@ async function createMainWindow() {
     },
   });
   await mainWindow.loadFile(path.join(__dirname, "ui", "index.html"));
+  registerZoomShortcuts(mainWindow.webContents);
 
   browserView = new WebContentsView({
     webPreferences: {
@@ -167,6 +218,8 @@ async function createMainWindow() {
   });
   mainWindow.contentView.addChildView(browserView);
   configureGuest(browserView.webContents);
+  browserView.webContents.setZoomFactor(settings.browserZoomPercent / 100);
+  registerZoomShortcuts(browserView.webContents);
   layoutViews();
   mainWindow.on("resize", layoutViews);
 
@@ -236,7 +289,7 @@ function redactWorkerLine(value) {
 
 async function runPythonDownloader(item, signal, onLine) {
   const sourceUrl = item.url || noteUrl(item.noteId, item.xsecToken);
-  const outputRoot = path.join(app.getPath("downloads"), PRODUCT_NAME);
+  const outputRoot = settings.downloadDirectory;
   const packagedCore = path.join(
     process.resourcesPath,
     "downloader",
@@ -451,7 +504,37 @@ function registerIpc() {
     return { ok: true };
   });
   ipcMain.handle("wahongshu:open-downloads", () =>
-    shell.openPath(path.join(app.getPath("downloads"), PRODUCT_NAME)),
+    shell.openPath(settings.downloadDirectory),
+  );
+  ipcMain.handle("wahongshu:choose-download-directory", async () => {
+    const result = await dialog.showOpenDialog(mainWindow, {
+      title: "选择挖红薯的下载位置",
+      defaultPath: settings.downloadDirectory,
+      buttonLabel: "使用这个文件夹",
+      properties: ["openDirectory", "createDirectory"],
+    });
+    if (result.canceled || !result.filePaths[0]) return { canceled: true };
+    settings = settingsStore.save({
+      ...settings,
+      downloadDirectory: result.filePaths[0],
+    });
+    fs.mkdirSync(settings.downloadDirectory, { recursive: true });
+    broadcast();
+    return { canceled: false, downloadDirectory: settings.downloadDirectory };
+  });
+  ipcMain.handle("wahongshu:reset-download-directory", () => {
+    settings = settingsStore.save({
+      ...settings,
+      downloadDirectory: DEFAULT_DOWNLOAD_DIRECTORY,
+    });
+    broadcast();
+    return { downloadDirectory: settings.downloadDirectory };
+  });
+  ipcMain.handle("wahongshu:set-browser-zoom", (_event, value) => ({
+    browserZoomPercent: setBrowserZoomPercent(value),
+  }));
+  ipcMain.handle("wahongshu:open-user-data", () =>
+    shell.openPath(app.getPath("userData")),
   );
   ipcMain.handle("wahongshu:open-devtools", () => {
     browserView.webContents.openDevTools({ mode: "detach" });

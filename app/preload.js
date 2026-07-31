@@ -9,6 +9,13 @@ contextBridge.exposeInMainWorld("wahongshu", {
     ipcRenderer.invoke("wahongshu:start-current", { limit }),
   cancel: () => ipcRenderer.invoke("wahongshu:cancel"),
   openDownloads: () => ipcRenderer.invoke("wahongshu:open-downloads"),
+  chooseDownloadDirectory: () =>
+    ipcRenderer.invoke("wahongshu:choose-download-directory"),
+  resetDownloadDirectory: () =>
+    ipcRenderer.invoke("wahongshu:reset-download-directory"),
+  setBrowserZoom: (percent) =>
+    ipcRenderer.invoke("wahongshu:set-browser-zoom", percent),
+  openUserData: () => ipcRenderer.invoke("wahongshu:open-user-data"),
   openDevTools: () => ipcRenderer.invoke("wahongshu:open-devtools"),
   onState: (callback) => {
     const listener = (_event, state) => callback(state);

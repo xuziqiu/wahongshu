@@ -86,7 +86,8 @@ button {
 }
 
 .browser-actions button,
-.quiet {
+.quiet,
+.zoom-controls button {
   width: 34px;
   height: 34px;
   border-radius: 10px;
@@ -167,6 +168,32 @@ button {
   width: auto;
   padding: 0 11px;
   font-size: 11px;
+}
+
+.zoom-controls {
+  display: flex;
+  align-items: center;
+  overflow: hidden;
+  border: 1px solid #e2ddd3;
+  border-radius: 10px;
+  background: #f0ede6;
+}
+
+.zoom-controls button {
+  width: 29px;
+  border-radius: 0;
+  font-size: 12px;
+}
+
+.zoom-controls #zoom-reset {
+  width: 48px;
+  border-right: 1px solid #ddd7cc;
+  border-left: 1px solid #ddd7cc;
+  font-size: 10px;
+}
+
+.zoom-controls button:hover {
+  background: #e8e3da;
 }
 
 .panel {
@@ -370,4 +397,137 @@ footer {
 
 .hidden {
   display: none !important;
+}
+
+.settings-dialog {
+  width: min(560px, calc(100vw - 48px));
+  max-height: calc(100vh - 64px);
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid rgba(214, 206, 195, 0.95);
+  border-radius: 22px;
+  color: var(--ink);
+  background: var(--paper);
+  box-shadow: 0 24px 80px rgba(31, 27, 22, 0.25);
+}
+
+.settings-dialog::backdrop {
+  background: rgba(37, 34, 30, 0.34);
+  backdrop-filter: blur(3px);
+}
+
+.settings-sheet {
+  max-height: calc(100vh - 64px);
+  padding: 24px;
+  overflow: auto;
+}
+
+.settings-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+}
+
+.settings-heading span {
+  color: var(--coral-dark);
+  font-size: 10px;
+  letter-spacing: 1px;
+}
+
+.settings-heading h2 {
+  margin: 4px 0 0;
+  font: 600 24px/1.25 Georgia, "Microsoft YaHei UI", sans-serif;
+}
+
+.icon-close {
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  color: #66645e;
+  background: #f0ede6;
+  font-size: 20px;
+}
+
+.setting-block {
+  margin-top: 20px;
+  padding: 17px;
+  border: 1px solid var(--line);
+  border-radius: 15px;
+  background: #faf8f3;
+}
+
+.setting-block label {
+  margin-bottom: 8px;
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.path-value {
+  margin: 0;
+  padding: 10px 11px;
+  overflow-wrap: anywhere;
+  border-radius: 9px;
+  color: #5f5d57;
+  background: #efebe3;
+  font: 11px/1.55 Consolas, "Microsoft YaHei UI", sans-serif;
+}
+
+.setting-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 11px;
+}
+
+.setting-actions button,
+.text-button.standalone {
+  min-height: 34px;
+  padding: 0 12px;
+  border-radius: 9px;
+  color: #fff;
+  background: var(--coral);
+  font-size: 11px;
+}
+
+.setting-actions .text-button,
+.text-button.standalone {
+  color: #65635d;
+  background: #eae5dc;
+}
+
+.setting-actions button:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+
+.settings-zoom {
+  display: grid;
+  grid-template-columns: 42px 1fr 42px;
+  gap: 8px;
+}
+
+.settings-zoom button,
+.settings-zoom output {
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #fff;
+}
+
+.settings-zoom output {
+  font-weight: 600;
+}
+
+.hint {
+  margin: 8px 0 0;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.6;
+}
+
+.text-button.standalone {
+  margin-top: 10px;
 }

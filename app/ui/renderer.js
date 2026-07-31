@@ -33,6 +33,16 @@ function render(state) {
   $("#back").disabled = !browser.canGoBack;
   $("#forward").disabled = !browser.canGoForward;
   $("#page-badge").textContent = browser.loading ? "页面加载中" : page.label;
+  const preferences = state.preferences;
+  if (preferences) {
+    $("#zoom-reset").textContent = `${preferences.browserZoomPercent}%`;
+    $("#settings-zoom-value").textContent =
+      `${preferences.browserZoomPercent}%`;
+    $("#download-directory").textContent = preferences.downloadDirectory;
+    $("#user-data-directory").textContent = preferences.userDataDirectory;
+    $("#reset-download-directory").disabled =
+      preferences.downloadDirectory === preferences.defaultDownloadDirectory;
+  }
 
   const supported = page.type !== "unsupported";
   const batch = ["profile", "favorites"].includes(page.type);
@@ -122,6 +132,33 @@ document.addEventListener("keydown", (event) => {
     $("#address-input").select();
   }
 });
+
+async function changeZoom(delta) {
+  const current = Number(currentState?.preferences?.browserZoomPercent || 100);
+  await window.wahongshu.setBrowserZoom(delta === 0 ? 100 : current + delta);
+}
+
+$("#zoom-out").addEventListener("click", () => changeZoom(-10));
+$("#zoom-reset").addEventListener("click", () => changeZoom(0));
+$("#zoom-in").addEventListener("click", () => changeZoom(10));
+$("#settings-zoom-out").addEventListener("click", () => changeZoom(-10));
+$("#settings-zoom-in").addEventListener("click", () => changeZoom(10));
+
+const settingsDialog = $("#settings-dialog");
+$("#settings").addEventListener("click", () => settingsDialog.showModal());
+settingsDialog.addEventListener("click", (event) => {
+  if (event.target === settingsDialog) settingsDialog.close();
+});
+
+$("#choose-download-directory").addEventListener("click", async () => {
+  await window.wahongshu.chooseDownloadDirectory();
+});
+$("#reset-download-directory").addEventListener("click", async () => {
+  await window.wahongshu.resetDownloadDirectory();
+});
+$("#open-user-data").addEventListener("click", () =>
+  window.wahongshu.openUserData(),
+);
 
 $("#minus").addEventListener("click", () => {
   $("#limit").value = Math.max(1, Number($("#limit").value || 1) - 1);

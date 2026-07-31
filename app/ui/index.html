@@ -36,6 +36,12 @@
         />
         <button id="go" type="button" title="打开输入的链接">前往</button>
       </div>
+      <div class="zoom-controls" aria-label="网页缩放">
+        <button id="zoom-out" title="缩小网页（Ctrl+-）">−</button>
+        <button id="zoom-reset" title="恢复 100%（Ctrl+0）">100%</button>
+        <button id="zoom-in" title="放大网页（Ctrl++）">＋</button>
+      </div>
+      <button id="settings" class="quiet" title="偏好设置">设置</button>
       <button id="devtools" class="quiet" title="打开内置页面开发工具">
         调试
       </button>
@@ -79,6 +85,52 @@
         <p>文件保存到 Windows 下载目录中的“挖红薯”文件夹。</p>
       </footer>
     </aside>
+
+    <dialog id="settings-dialog" class="settings-dialog">
+      <form method="dialog" class="settings-sheet">
+        <div class="settings-heading">
+          <div>
+            <span>应用设置</span>
+            <h2>偏好设置</h2>
+          </div>
+          <button class="icon-close" value="close" aria-label="关闭">×</button>
+        </div>
+
+        <section class="setting-block">
+          <label>下载位置</label>
+          <p id="download-directory" class="path-value"></p>
+          <div class="setting-actions">
+            <button id="choose-download-directory" type="button">
+              选择文件夹
+            </button>
+            <button id="reset-download-directory" type="button" class="text-button">
+              恢复默认位置
+            </button>
+          </div>
+        </section>
+
+        <section class="setting-block">
+          <label>内置网页缩放</label>
+          <div class="settings-zoom">
+            <button id="settings-zoom-out" type="button">−</button>
+            <output id="settings-zoom-value">100%</output>
+            <button id="settings-zoom-in" type="button">＋</button>
+          </div>
+          <p class="hint">范围为 50%–200%，也可以使用 Ctrl＋、Ctrl− 和 Ctrl＋0。</p>
+        </section>
+
+        <section class="setting-block">
+          <label>小红书登录</label>
+          <p class="hint">
+            登录状态自动保存在这台电脑上，并使用 Windows 系统加密备份；不会写进 EXE 或下载目录。
+          </p>
+          <p id="user-data-directory" class="path-value"></p>
+          <button id="open-user-data" type="button" class="text-button standalone">
+            打开应用数据目录
+          </button>
+        </section>
+      </form>
+    </dialog>
 
     <script src="renderer.js"></script>
   </body>
