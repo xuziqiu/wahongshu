@@ -12,12 +12,9 @@ test("parses a JSON single-note download", () => {
     "挖红薯.exe",
     "download",
     "https://www.xiaohongshu.com/explore/6a5c69ab000000000f02b320",
-    "--limit",
-    "1",
     "--json",
   ]);
   assert.equal(invocation.command, "download");
-  assert.equal(invocation.limit, 1);
   assert.equal(invocation.json, true);
 });
 
@@ -54,6 +51,39 @@ test("parses an explicit batch resume without changing the default", () => {
   assert.equal(normal.dryRun, false);
 });
 
+test("parses all-post and JSONL modes for an AI caller", () => {
+  const invocation = parseCliInvocation([
+    "挖红薯.exe",
+    "profile",
+    "--all",
+    "--jsonl",
+    "--dry-run",
+    "--list",
+    "https://www.xiaohongshu.com/user/profile/test",
+  ]);
+  assert.equal(invocation.all, true);
+  assert.equal(invocation.limit, null);
+  assert.equal(invocation.json, true);
+  assert.equal(invocation.jsonl, true);
+  assert.equal(invocation.dryRun, true);
+  assert.equal(invocation.list, true);
+});
+
+test("rejects an ambiguous all-post limit", () => {
+  assert.throws(
+    () =>
+      parseCliInvocation([
+        "挖红薯.exe",
+        "profile",
+        "--all",
+        "--limit",
+        "10",
+        "https://www.xiaohongshu.com/user/profile/test",
+      ]),
+    /不能同时使用/,
+  );
+});
+
 test("rejects resume for a single-note command", () => {
   assert.throws(
     () =>
@@ -64,6 +94,33 @@ test("rejects resume for a single-note command", () => {
         "https://www.xiaohongshu.com/explore/test",
       ]),
     /只适用于博主主页和收藏页/,
+  );
+});
+
+test("rejects meaningless batch limits for a single note", () => {
+  assert.throws(
+    () =>
+      parseCliInvocation([
+        "挖红薯.exe",
+        "download",
+        "--limit",
+        "1",
+        "https://www.xiaohongshu.com/explore/test",
+      ]),
+    /只适用于博主主页和收藏页/,
+  );
+});
+
+test("only emits a full item list for an explicit dry run", () => {
+  assert.throws(
+    () =>
+      parseCliInvocation([
+        "挖红薯.exe",
+        "profile",
+        "--list",
+        "https://www.xiaohongshu.com/user/profile/test",
+      ]),
+    /需要和 --dry-run 一起使用/,
   );
 });
 

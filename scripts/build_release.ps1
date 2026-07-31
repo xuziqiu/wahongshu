@@ -33,7 +33,7 @@ foreach ($name in @(
 )) {
   Copy-Item -LiteralPath (Join-Path $projectRoot $name) -Destination $stagingRoot
 }
-foreach ($name in @("app", "core", "design", "tests", "scripts")) {
+foreach ($name in @("app", "cli", "core", "design", "tests", "scripts")) {
   Copy-Item -LiteralPath (Join-Path $projectRoot $name) -Destination $stagingRoot -Recurse
 }
 $electronDistSource = Join-Path $projectRoot "node_modules\electron\dist"
@@ -53,24 +53,15 @@ try {
   Pop-Location
 }
 
-$builtExe = Get-ChildItem -LiteralPath (Join-Path $stagingRoot "release") `
-  -Filter "*.exe" -File |
-  Select-Object -First 1
-if (-not $builtExe) {
-  throw "The portable executable was not produced."
-}
-
 $releaseRoot = Join-Path $projectRoot "release"
 New-Item -ItemType Directory -Force -Path $releaseRoot | Out-Null
-$destination = Join-Path $releaseRoot $builtExe.Name
-Copy-Item -LiteralPath $builtExe.FullName -Destination $destination -Force
-$builtChecksum = "$($builtExe.FullName).sha256"
-if (-not (Test-Path -LiteralPath $builtChecksum)) {
-  throw "Release checksum was not produced: $builtChecksum"
+$builtAssets = Get-ChildItem -LiteralPath (Join-Path $stagingRoot "release") `
+  -File | Where-Object { $_.Name -match '\.exe(?:\.sha256)?$' }
+if ($builtAssets.Count -ne 4) {
+  throw "Expected two EXEs and two SHA-256 files, found $($builtAssets.Count)."
 }
-$checksumDestination = "$destination.sha256"
-Copy-Item -LiteralPath $builtChecksum -Destination $checksumDestination -Force
-$hash = (Get-FileHash -LiteralPath $destination -Algorithm SHA256).Hash
-
-Write-Host "Release: $destination"
-Write-Host "SHA256: $($hash.ToLowerInvariant())"
+foreach ($asset in $builtAssets) {
+  $destination = Join-Path $releaseRoot $asset.Name
+  Copy-Item -LiteralPath $asset.FullName -Destination $destination -Force
+  Write-Host "Release asset: $destination"
+}

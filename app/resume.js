@@ -24,6 +24,25 @@ function completedNoteIds(outputRoot, fileSystem = fs) {
       }
     }
   }
+  const metadataRoot = path.join(outputRoot, "_manifests");
+  try {
+    for (const entry of fileSystem.readdirSync(metadataRoot, {
+      withFileTypes: true,
+    })) {
+      if (!entry.isFile() || path.extname(entry.name) !== ".json") continue;
+      try {
+        const manifest = JSON.parse(
+          fileSystem.readFileSync(path.join(metadataRoot, entry.name), "utf8"),
+        );
+        const noteId = String(manifest?.note_id || "").trim().toLowerCase();
+        if (/^[0-9a-f]{24}$/.test(noteId)) noteIds.add(noteId);
+      } catch (error) {
+        if (!(error instanceof SyntaxError)) throw error;
+      }
+    }
+  } catch (error) {
+    if (error?.code !== "ENOENT") throw error;
+  }
   return noteIds;
 }
 

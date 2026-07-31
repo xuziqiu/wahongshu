@@ -6,7 +6,7 @@
 
 <p align="center">
   带内置浏览器的小红书媒体下载与个人备份工具<br>
-  一个 EXE，同时提供图形界面和命令行
+  一个下载核心，两种自包含入口：图形界面与命令行
 </p>
 
 <p align="center">
@@ -43,8 +43,8 @@
 | 高质量媒体 | 图片优先选择无网页转换参数的公开主资源；视频优先选择最高质量的兼容 H.264 流 |
 | Live Photo | 同时保存静态图片和对应的动态视频部分 |
 | 清晰的文件名 | 使用“笔记标题 + 编号”命名，单篇内容保存到“标题 + 笔记 ID”文件夹 |
-| 批次目录 | 博主主页按“博主名 + 主页 ID”建立汇总文件夹，再在其中保存各笔记目录 |
-| 图形界面与 CLI | 普通用户可以点选操作，脚本和 AI 可以直接调用同一个 EXE |
+| 批次目录 | 博主主页按“博主名 + 主页 ID”建立汇总文件夹，照片和视频直接平铺其中；文件名含笔记 ID，避免重名 |
+| 图形界面与 CLI | GUI 适合点选操作；CLI 提供实时结构化进度、退出码和断点续传，适合脚本与 AI |
 
 这里所说的“最高质量”是**页面当时公开提供的最佳媒体**，不保证与发布者上传
 前的本地原文件逐字节一致。格式、元数据和画质仍可能受到平台处理影响。
@@ -76,38 +76,42 @@
 
 ## 命令行使用方法
 
-同一个便携版 EXE 也可以作为 CLI 使用，适合自动化脚本、批处理和 AI Agent。
-CLI 与图形界面共用登录状态、下载目录和下载核心，因此第一次使用仍应先打开
-图形界面完成登录。
+Release 同时提供 `WaHongShu-<版本>.exe`（GUI）和
+`WaHongShu-CLI-<版本>.exe`（CLI）。二者都是可单独复制运行的自包含 EXE，
+不需要旁挂程序目录；CLI 内部复用同一套浏览器会话和下载核心，适合自动化
+脚本、批处理和 AI Agent。第一次使用仍应先打开 GUI 完成登录。
 
 下面以 PowerShell 为例：
 
 ```powershell
 # 查看帮助和版本
-& ".\WaHongShu-1.1.2.exe" --help
-& ".\WaHongShu-1.1.2.exe" --version
+& ".\WaHongShu-CLI-1.2.0.exe" --help
+& ".\WaHongShu-CLI-1.2.0.exe" --version
 
 # 下载单篇笔记
-& ".\WaHongShu-1.1.2.exe" download "<小红书笔记链接>"
+& ".\WaHongShu-CLI-1.2.0.exe" download "<小红书笔记链接>"
 
 # 下载博主主页前 5 篇
-& ".\WaHongShu-1.1.2.exe" profile "<博主主页链接>" --limit 5
+& ".\WaHongShu-CLI-1.2.0.exe" profile "<博主主页链接>" --limit 5
 
 # 断点续传：只处理没有成功 manifest 的笔记
-& ".\WaHongShu-1.1.2.exe" profile --limit 1000 --resume "<博主主页链接>"
+& ".\WaHongShu-CLI-1.2.0.exe" profile --all --resume "<博主主页链接>"
+
+# 扫描到主页末尾，并输出适合 AI 实时读取的 JSONL 进度
+& ".\WaHongShu-CLI-1.2.0.exe" profile --all --resume --jsonl "<博主主页链接>"
 
 # 只预演断点续传数量，不下载任何文件
-& ".\WaHongShu-1.1.2.exe" profile --limit 1000 --resume --dry-run --json "<博主主页链接>"
+& ".\WaHongShu-CLI-1.2.0.exe" profile --all --resume --dry-run --json "<博主主页链接>"
 
 # 下载“我的收藏”前 3 篇
-& ".\WaHongShu-1.1.2.exe" favorites "<收藏页链接>" --limit 3
+& ".\WaHongShu-CLI-1.2.0.exe" favorites "<收藏页链接>" --limit 3
 
 # 本次任务临时指定保存位置，不修改图形界面中的偏好设置
-& ".\WaHongShu-1.1.2.exe" download "<小红书笔记链接>" `
+& ".\WaHongShu-CLI-1.2.0.exe" download "<小红书笔记链接>" `
   "--output-dir=D:\Media\挖红薯"
 
 # 输出单行 JSON，方便脚本或 AI 读取
-& ".\WaHongShu-1.1.2.exe" profile "<博主主页链接>" `
+& ".\WaHongShu-CLI-1.2.0.exe" profile "<博主主页链接>" `
   --limit 5 --json
 ```
 
@@ -118,25 +122,32 @@ CLI 与图形界面共用登录状态、下载目录和下载核心，因此第�
 `--resume` 是显式的批量断点续传开关，只适用于博主主页和收藏页。它以成功写入
 的 `manifest.json` 为准跳过已经完成的笔记；不写这个开关时仍会照常重新下载，
 不会自动去重。`--dry-run` 只返回扫描、跳过和待下载数量，不会写入媒体文件。
+`--all` 会持续滚动到页面末尾；`--jsonl` 在标准输出中逐行输出结构化进度事件，
+并在结束时输出最终 JSON。遇到登录或安全验证时，批量任务会立即暂停并返回
+`AUTH_REQUIRED` 或 `LOGIN_REQUIRED`。只有显式添加 `--list` 时，预演结果才会
+附带完整笔记 ID 清单，避免普通 AI 调用收到过大的 JSON。
 
-不带任何参数运行 EXE 时，仍会进入图形界面。
+CLI 不带参数时显示帮助；需要图形界面时运行不带 `-CLI` 的 EXE。
 
 ## 下载结果
 
-每篇笔记使用独立文件夹，媒体顺序与笔记页面一致：
+单篇笔记使用独立文件夹。博主主页批量任务则把所有照片和视频直接平铺到一个
+“博主名 + 主页 ID”目录中，媒体顺序仍保留在文件名里：
 
 ```text
 下载目录/
-└─ 笔记标题_[笔记ID]/
-   ├─ 笔记标题_01.jpg
-   ├─ 笔记标题_01_Live.mp4
-   ├─ 笔记标题_02.jpg
-   └─ manifest.json
+└─ 博主名_[主页ID]/
+   ├─ 笔记标题_[笔记ID]_01.jpg
+   ├─ 笔记标题_[笔记ID]_01_Live.mp4
+   ├─ batch_manifest.json
+   └─ _manifests/
+      └─ 笔记ID.json
 ```
 
-普通视频笔记会保存为 `笔记标题_01.mp4` 等实际媒体格式。`manifest.json` 记录
-笔记 ID、媒体尺寸、格式和所选公开资源等信息；访问 Token 会被遮盖。每次执行
-任务都会重新下载，不会因为此前下载过而跳过内容。
+单篇任务中的普通视频会保存为 `笔记标题_01.mp4` 等实际媒体格式。批量任务的
+每篇元数据保存在 `_manifests/笔记ID.json`，`batch_manifest.json` 则汇总整批
+笔记和媒体数量；其中会记录媒体尺寸、格式和所选公开资源等信息，访问 Token
+会被遮盖。默认每次执行都会重新下载；只有明确传入 `--resume` 才跳过已完成项。
 
 ## 登录、隐私与本机数据
 
@@ -156,7 +167,8 @@ CLI 与图形界面共用登录状态、下载目录和下载核心，因此第�
 校验文件，可在 PowerShell 中核对：
 
 ```powershell
-Get-FileHash -Algorithm SHA256 ".\WaHongShu-1.1.2.exe"
+Get-FileHash -Algorithm SHA256 ".\WaHongShu-1.2.0.exe"
+Get-FileHash -Algorithm SHA256 ".\WaHongShu-CLI-1.2.0.exe"
 ```
 
 输出应与同一 Release 中 `.exe.sha256` 文件记录的值一致。
@@ -186,13 +198,14 @@ npm run dist:local
 ```
 
 本地构建脚本会在纯英文的 Windows 临时目录中完成封装，以避开部分打包工具对
-中文路径的兼容问题。最终 EXE 和 SHA-256 文件生成在 `release/`；Python 下载
-核心会先由 PyInstaller 封装，再作为 Electron 资源装入同一个便携版 EXE。
+中文路径的兼容问题。最终会在 `release/` 生成 GUI、CLI 两个自包含 EXE 及各自
+的 SHA-256 文件。它们共享同一应用数据目录、登录会话、设置和下载核心。
 
 ## 项目结构
 
 ```text
-app/                 Electron 桌面程序、内置浏览器、CLI 与界面
+app/                 Electron 桌面程序、内置浏览器、任务编排与界面
+cli/                 独立 CLI EXE 启动器与实时输出桥接
 core/downloader.py   单篇笔记媒体下载核心
 tests/               Python 下载核心测试
 app/tests/           桌面端、发布脚本与会话保存测试

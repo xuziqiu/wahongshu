@@ -25,7 +25,7 @@ jobs:
       - run: npm run dist
         env:
           WAHONGSHU_RELEASE_BASENAME: WaHongShu
-      - name: Publish portable executable and checksum
+      - name: Publish GUI, CLI and checksums
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
@@ -33,7 +33,7 @@ jobs:
           $assets = Get-ChildItem release -File |
             Where-Object { $_.Name -match '\.exe(?:\.sha256)?$' } |
             Select-Object -ExpandProperty FullName
-          if ($assets.Count -ne 2) {
-            throw "Expected one portable EXE and one SHA-256 file."
+          if ($assets.Count -ne 4) {
+            throw "Expected GUI and CLI executables plus two SHA-256 files."
           }
           gh release create $env:GITHUB_REF_NAME $assets --generate-notes
