@@ -7,9 +7,13 @@ release/*
 !release/README.md
 
 __pycache__/
+.pytest_cache/
+.coverage
+htmlcov/
 *.pyc
 *.pyo
 *.spec
 *.log
 .env
 .DS_Store
+Thumbs.db
