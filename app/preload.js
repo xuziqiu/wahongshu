@@ -15,6 +15,8 @@ contextBridge.exposeInMainWorld("wahongshu", {
     ipcRenderer.invoke("wahongshu:reset-download-directory"),
   setBrowserZoom: (percent) =>
     ipcRenderer.invoke("wahongshu:set-browser-zoom", percent),
+  setSettingsOpen: (open) =>
+    ipcRenderer.invoke("wahongshu:set-settings-open", open),
   openUserData: () => ipcRenderer.invoke("wahongshu:open-user-data"),
   openDevTools: () => ipcRenderer.invoke("wahongshu:open-devtools"),
   onState: (callback) => {

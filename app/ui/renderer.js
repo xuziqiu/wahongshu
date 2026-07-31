@@ -145,9 +145,20 @@ $("#settings-zoom-out").addEventListener("click", () => changeZoom(-10));
 $("#settings-zoom-in").addEventListener("click", () => changeZoom(10));
 
 const settingsDialog = $("#settings-dialog");
-$("#settings").addEventListener("click", () => settingsDialog.showModal());
+$("#settings").addEventListener("click", async () => {
+  try {
+    await window.wahongshu.setSettingsOpen(true);
+    settingsDialog.showModal();
+  } catch (error) {
+    await window.wahongshu.setSettingsOpen(false);
+    alert(error.message || String(error));
+  }
+});
 settingsDialog.addEventListener("click", (event) => {
   if (event.target === settingsDialog) settingsDialog.close();
+});
+settingsDialog.addEventListener("close", () => {
+  window.wahongshu.setSettingsOpen(false);
 });
 
 $("#choose-download-directory").addEventListener("click", async () => {

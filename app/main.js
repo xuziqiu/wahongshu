@@ -533,6 +533,10 @@ function registerIpc() {
   ipcMain.handle("wahongshu:set-browser-zoom", (_event, value) => ({
     browserZoomPercent: setBrowserZoomPercent(value),
   }));
+  ipcMain.handle("wahongshu:set-settings-open", (_event, open) => {
+    if (browserView) browserView.setVisible(!Boolean(open));
+    return { ok: true };
+  });
   ipcMain.handle("wahongshu:open-user-data", () =>
     shell.openPath(app.getPath("userData")),
   );
