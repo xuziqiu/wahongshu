@@ -23,7 +23,10 @@ test("finalizes the portable launcher and writes its checksum", () => {
     bytes.writeInt32LE(0x80, 0x3c);
     fs.writeFileSync(executablePath, bytes);
 
-    const result = finalizeRelease({ projectRoot });
+    const result = finalizeRelease({
+      artifactBaseName: "挖红薯",
+      projectRoot,
+    });
     const finalized = fs.readFileSync(executablePath);
     assert.equal(finalized.readUInt16LE(0x80 + 92), 3);
     assert.equal(result.hash, sha256File(executablePath));
