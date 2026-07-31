@@ -83,24 +83,24 @@ CLI 与图形界面共用登录状态、下载目录和下载核心，因此第�
 
 ```powershell
 # 查看帮助和版本
-& ".\WaHongShu-1.1.1.exe" --help
-& ".\WaHongShu-1.1.1.exe" --version
+& ".\WaHongShu-1.1.2.exe" --help
+& ".\WaHongShu-1.1.2.exe" --version
 
 # 下载单篇笔记
-& ".\WaHongShu-1.1.1.exe" download "<小红书笔记链接>"
+& ".\WaHongShu-1.1.2.exe" download "<小红书笔记链接>"
 
 # 下载博主主页前 5 篇
-& ".\WaHongShu-1.1.1.exe" profile "<博主主页链接>" --limit 5
+& ".\WaHongShu-1.1.2.exe" profile "<博主主页链接>" --limit 5
 
 # 下载“我的收藏”前 3 篇
-& ".\WaHongShu-1.1.1.exe" favorites "<收藏页链接>" --limit 3
+& ".\WaHongShu-1.1.2.exe" favorites "<收藏页链接>" --limit 3
 
 # 本次任务临时指定保存位置，不修改图形界面中的偏好设置
-& ".\WaHongShu-1.1.1.exe" download "<小红书笔记链接>" `
+& ".\WaHongShu-1.1.2.exe" download "<小红书笔记链接>" `
   "--output-dir=D:\Media\挖红薯"
 
 # 输出单行 JSON，方便脚本或 AI 读取
-& ".\WaHongShu-1.1.1.exe" profile "<博主主页链接>" `
+& ".\WaHongShu-1.1.2.exe" profile "<博主主页链接>" `
   --limit 5 --json
 ```
 
@@ -145,7 +145,7 @@ CLI 与图形界面共用登录状态、下载目录和下载核心，因此第�
 校验文件，可在 PowerShell 中核对：
 
 ```powershell
-Get-FileHash -Algorithm SHA256 ".\WaHongShu-1.1.1.exe"
+Get-FileHash -Algorithm SHA256 ".\WaHongShu-1.1.2.exe"
 ```
 
 输出应与同一 Release 中 `.exe.sha256` 文件记录的值一致。
@@ -185,6 +185,7 @@ app/                 Electron 桌面程序、内置浏览器、CLI 与界面
 core/downloader.py   单篇笔记媒体下载核心
 tests/               Python 下载核心测试
 app/tests/           桌面端、发布脚本与会话保存测试
+design/branding/     生图源稿；由脚本裁切为最终应用图标
 scripts/             Windows 本地构建与发布收尾脚本
 .github/workflows/   持续集成与 GitHub Release 工作流
 release/             本地构建成品；二进制不提交到 Git

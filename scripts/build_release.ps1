@@ -33,7 +33,7 @@ foreach ($name in @(
 )) {
   Copy-Item -LiteralPath (Join-Path $projectRoot $name) -Destination $stagingRoot
 }
-foreach ($name in @("app", "core", "tests", "scripts")) {
+foreach ($name in @("app", "core", "design", "tests", "scripts")) {
   Copy-Item -LiteralPath (Join-Path $projectRoot $name) -Destination $stagingRoot -Recurse
 }
 $electronDistSource = Join-Path $projectRoot "node_modules\electron\dist"
