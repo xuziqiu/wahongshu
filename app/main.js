@@ -25,8 +25,14 @@ const {
   waitForRenderedNote,
 } = require("./page_workflow");
 const { parseCliInvocation, cliUsage } = require("./cli");
-const { createGuiConsoleLogger } = require("./console_logger");
 const { createSessionKeeper } = require("./session_store");
+const { completedNoteIds } = require("./resume");
+const { batchOutputDirectory } = require("./batch_output");
+const {
+  flattenNoteDirectory,
+  rebuildBatchManifest,
+} = require("./flat_batch");
+const { shouldPauseBatch, taskErrorCode } = require("./task_errors");
 const {
   createSettingsStore,
   normalizeZoomPercent,
@@ -87,7 +93,6 @@ let activeWorker = null;
 let sessionKeeper = null;
 let cliWindow = null;
 let stateObserver = null;
-let guiConsoleLogger = null;
 let quitPrepared = false;
 let quitPreparing = false;
 let state = {
@@ -120,7 +125,6 @@ function publicState() {
 function broadcast() {
   const snapshot = publicState();
   stateObserver?.(snapshot);
-  guiConsoleLogger?.observe(snapshot);
   if (mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.webContents.send("wahongshu:state", snapshot);
   }
@@ -272,7 +276,9 @@ async function scanVisiblePage(limit, signal) {
   const found = new Map();
   let staleRounds = 0;
   const started = Date.now();
-  while (Date.now() - started < 45000) {
+  const scanAll = limit === null;
+  const timeout = scanAll ? 300000 : 45000;
+  while (Date.now() - started < timeout) {
     if (signal.aborted) throw new Error("任务已停止");
     const links = await contents.executeJavaScript(collectLinksScript());
     const before = found.size;
@@ -281,12 +287,16 @@ async function scanVisiblePage(limit, signal) {
     }
     setTask({
       status: "scanning",
-      detail: `已识别 ${found.size} / ${limit} 篇`,
+      detail: scanAll
+        ? `已识别 ${found.size} 篇，继续扫描到末尾…`
+        : `已识别 ${found.size} / ${limit} 篇`,
       current: found.size,
-      total: limit,
-      percent: Math.min(15, Math.round((found.size / limit) * 15)),
+      total: scanAll ? 0 : limit,
+      percent: scanAll
+        ? 0
+        : Math.min(15, Math.round((found.size / limit) * 15)),
     });
-    if (found.size >= limit) break;
+    if (!scanAll && found.size >= limit) break;
     staleRounds = found.size === before ? staleRounds + 1 : 0;
     if (found.size && staleRounds >= 7) break;
     await contents.executeJavaScript(
@@ -294,7 +304,9 @@ async function scanVisiblePage(limit, signal) {
     );
     await wait(1250);
   }
-  return [...found.values()].slice(0, limit);
+  return scanAll
+    ? [...found.values()]
+    : [...found.values()].slice(0, limit);
 }
 
 function redactWorkerLine(value) {
@@ -351,9 +363,14 @@ async function loadRenderedNoteSnapshot(item, signal, onLine, listUrl = "") {
   return html;
 }
 
-async function runPythonDownloader(item, signal, onLine, listUrl = "") {
+async function runPythonDownloader(
+  item,
+  signal,
+  onLine,
+  listUrl = "",
+  outputRoot = settings.downloadDirectory,
+) {
   const sourceUrl = item.url || noteUrl(item.noteId, item.xsecToken);
-  const outputRoot = settings.downloadDirectory;
   let snapshotDirectory = null;
   let snapshotPath = null;
   try {
@@ -445,23 +462,36 @@ async function runPythonDownloader(item, signal, onLine, listUrl = "") {
   }
 }
 
-async function runTask(limit) {
+async function runTask(
+  limit,
+  { resume = false, dryRun = false, includeItems = false } = {},
+) {
   const page = recognizePage(browserView.webContents.getURL());
   if (page.type === "unsupported") throw new Error(page.label);
   const controller = new AbortController();
   taskController = controller;
   const signal = controller.signal;
   const startedAt = Date.now();
+  const sourceTitle = cleanPageTitle(browserView.webContents.getTitle());
+  const taskOutputDirectory = batchOutputDirectory(
+    settings.downloadDirectory,
+    page,
+    sourceTitle,
+  );
+  fs.mkdirSync(taskOutputDirectory, { recursive: true });
   const listUrl = ["profile", "favorites"].includes(page.type)
     ? browserView.webContents.getURL()
     : "";
   state.task = {
     status: page.type === "single" ? "running" : "scanning",
     sourceType: page.type,
+    sourceId: page.profileId || "",
+    sourceTitle,
+    outputDirectory: taskOutputDirectory,
     detail:
       page.type === "single" ? "正在读取当前笔记…" : "正在识别当前列表…",
     current: 0,
-    total: page.type === "single" ? 1 : limit,
+    total: page.type === "single" ? 1 : limit || 0,
     completed: 0,
     failed: 0,
     percent: 0,
@@ -487,7 +517,46 @@ async function runTask(limit) {
       }
     }
 
+    const scanned = items.length;
+    const scannedItems = items.map((item) => ({
+      noteId: item.noteId,
+      title: item.title || item.noteId,
+    }));
+    let skipped = 0;
+    if (resume && page.type !== "single") {
+      const completed = completedNoteIds(taskOutputDirectory);
+      items = items.filter(
+        (item) => !completed.has(String(item.noteId || "").toLowerCase()),
+      );
+      skipped = scanned - items.length;
+    }
+
     const total = items.length;
+    setTask({
+      scanned,
+      skipped,
+      planned: total,
+      total,
+      items: dryRun && includeItems ? scannedItems : undefined,
+    });
+    if (dryRun) {
+      setTask({
+        status: "success",
+        percent: 100,
+        detail: `预演完成：扫描 ${scanned} 篇，跳过 ${skipped} 篇，待下载 ${total} 篇`,
+        finishedAt: Date.now(),
+      });
+      return structuredClone(state.task);
+    }
+    if (!total) {
+      setTask({
+        status: "success",
+        percent: 100,
+        detail: `扫描 ${scanned} 篇，已有完整记录 ${skipped} 篇，无需下载`,
+        finishedAt: Date.now(),
+      });
+      return structuredClone(state.task);
+    }
     for (let index = 0; index < total; index += 1) {
       if (signal.aborted) throw new Error("任务已停止");
       const item = items[index];
@@ -513,16 +582,50 @@ async function runTask(limit) {
             });
           },
           listUrl,
+          taskOutputDirectory,
         );
+        if (page.type !== "single") {
+          const noteDirectory = fs
+            .readdirSync(taskOutputDirectory, { withFileTypes: true })
+            .filter((entry) => entry.isDirectory() && entry.name !== "_manifests")
+            .map((entry) => path.join(taskOutputDirectory, entry.name))
+            .find((directory) => {
+              try {
+                const manifest = JSON.parse(
+                  fs.readFileSync(path.join(directory, "manifest.json"), "utf8"),
+                );
+                return manifest.note_id === item.noteId;
+              } catch {
+                return false;
+              }
+            });
+          if (!noteDirectory) {
+            throw new Error(`下载完成后没有找到笔记 ${item.noteId} 的目录`);
+          }
+          flattenNoteDirectory(taskOutputDirectory, noteDirectory);
+          rebuildBatchManifest(taskOutputDirectory);
+        }
         state.task.completed += 1;
       } catch (error) {
         if (signal.aborted) throw error;
+        const errorCode = taskErrorCode(error);
         failures.push({
           noteId: item.noteId,
           title: item.title || item.noteId,
           error: error instanceof Error ? error.message : String(error),
+          errorCode,
         });
         state.task.failed += 1;
+        if (shouldPauseBatch(error)) {
+          setTask({
+            status: "blocked",
+            detail: "小红书要求安全验证，任务已暂停",
+            error: error instanceof Error ? error.message : String(error),
+            errorCode,
+            failures,
+          });
+          throw error;
+        }
       }
       broadcast();
     }
@@ -531,22 +634,30 @@ async function runTask(limit) {
       status: failed ? "failed" : "success",
       percent: 100,
       detail: failed
-        ? `完成 ${state.task.completed} 篇，失败 ${failed} 篇`
-        : `已完成 ${state.task.completed} 篇`,
+        ? `完成 ${state.task.completed} 篇，失败 ${failed} 篇，跳过 ${skipped} 篇`
+        : `已完成 ${state.task.completed} 篇，跳过 ${skipped} 篇`,
       error: failures[0]?.error || "",
+      errorCode: failures[0]?.errorCode || "",
       failures,
       finishedAt: Date.now(),
     });
   } catch (error) {
     const cancelled = signal.aborted;
+    const errorCode = taskErrorCode(error);
+    const blocked = shouldPauseBatch(error);
     setTask({
-      status: cancelled ? "cancelled" : "failed",
-      detail: cancelled ? "任务已停止" : "任务失败",
+      status: cancelled ? "cancelled" : blocked ? "blocked" : "failed",
+      detail: cancelled
+        ? "任务已停止"
+        : blocked
+          ? "小红书要求安全验证，任务已暂停"
+          : "任务失败",
       error: cancelled
         ? ""
         : error instanceof Error
           ? error.message
           : String(error),
+      errorCode,
       finishedAt: Date.now(),
     });
   } finally {
@@ -563,6 +674,33 @@ async function runTask(limit) {
 function writeCli(stream, value) {
   try {
     stream.write(`${value}\n`);
+  } catch {}
+  const eventFile = process.env.WAHONGSHU_CLI_EVENT_FILE;
+  if (!eventFile) return;
+  try {
+    fs.appendFileSync(
+      eventFile,
+      `${JSON.stringify({
+        channel: stream === process.stderr ? "stderr" : "stdout",
+        value: String(value),
+      })}\n`,
+      "utf8",
+    );
+  } catch {}
+}
+
+function writeCliBridgeResult(exitCode) {
+  const resultFile = process.env.WAHONGSHU_CLI_RESULT_FILE;
+  if (!resultFile) return;
+  try {
+    const temporaryPath = `${resultFile}.tmp`;
+    fs.writeFileSync(
+      temporaryPath,
+      `${JSON.stringify({ exitCode })}\n`,
+      "utf8",
+    );
+    if (fs.existsSync(resultFile)) fs.unlinkSync(resultFile);
+    fs.renameSync(temporaryPath, resultFile);
   } catch {}
 }
 
@@ -638,20 +776,53 @@ async function runCli(invocation) {
         writeCli(process.stderr, line);
       }
     };
+  } else if (invocation.jsonl) {
+    stateObserver = (snapshot) => {
+      const task = snapshot.task;
+      if (!task) return;
+      const line = JSON.stringify({
+        event: "progress",
+        status: task.status,
+        current: task.current || 0,
+        total: task.total || 0,
+        completed: task.completed || 0,
+        failed: task.failed || 0,
+        skipped: task.skipped || 0,
+        percent: task.percent || 0,
+        title: task.currentTitle || "",
+        detail: task.detail || "",
+        errorCode: task.errorCode || "",
+      });
+      if (line && line !== lastLine) {
+        lastLine = line;
+        writeCli(process.stdout, line);
+      }
+    };
   }
 
-  const result = await runTask(invocation.limit);
+  const result = await runTask(invocation.limit, {
+    resume: invocation.resume,
+    dryRun: invocation.dryRun,
+    includeItems: invocation.list,
+  });
   stateObserver = null;
   const payload = {
     status: result?.status || "failed",
     sourceType: result?.sourceType || recognizePage(invocation.url).type,
+    sourceId: result?.sourceId || "",
+    sourceTitle: result?.sourceTitle || "",
     completed: result?.completed || 0,
     failed: result?.failed || 0,
+    skipped: result?.skipped || 0,
+    scanned: result?.scanned || 0,
+    planned: result?.planned || 0,
     title: result?.currentTitle || "",
     error: result?.error || "",
+    errorCode: result?.errorCode || "",
     failures: result?.failures || [],
-    outputDirectory: settings.downloadDirectory,
+    outputDirectory: result?.outputDirectory || settings.downloadDirectory,
   };
+  if (invocation.list) payload.items = result?.items || [];
   if (invocation.json) {
     writeCli(process.stdout, JSON.stringify(payload));
   } else {
@@ -761,16 +932,10 @@ try {
 } catch (error) {
   cliInvocation = {
     parseError: error instanceof Error ? error.message : String(error),
-    json: process.argv.includes("--json"),
+    json:
+      process.argv.includes("--json") || process.argv.includes("--jsonl"),
+    jsonl: process.argv.includes("--jsonl"),
   };
-}
-
-if (!cliInvocation) {
-  process.title = "挖红薯运行日志 - 请勿关闭（可以最小化）";
-  guiConsoleLogger = createGuiConsoleLogger({
-    write: (line) => writeCli(process.stdout, line),
-  });
-  guiConsoleLogger.start(app.getVersion());
 }
 
 app.whenReady().then(async () => {
@@ -796,14 +961,16 @@ app.whenReady().then(async () => {
       exitCode = await runCli(cliInvocation);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
+      const errorCode = taskErrorCode(error);
       if (cliInvocation.json) {
         writeCli(
           process.stdout,
           JSON.stringify({
-            status: "failed",
+            status: shouldPauseBatch(error) ? "blocked" : "failed",
             completed: 0,
             failed: 1,
             error: message,
+            errorCode,
             outputDirectory: settings.downloadDirectory,
           }),
         );
@@ -812,6 +979,7 @@ app.whenReady().then(async () => {
       }
     }
     await sessionKeeper.flush().catch(() => {});
+    writeCliBridgeResult(exitCode);
     if (cliWindow && !cliWindow.isDestroyed()) cliWindow.destroy();
     await wait(100);
     quitPrepared = true;
@@ -819,7 +987,6 @@ app.whenReady().then(async () => {
     return;
   }
   await createMainWindow();
-  guiConsoleLogger?.emit("浏览器", "图形界面和内置浏览器已就绪");
 });
 
 app.on("window-all-closed", () => {

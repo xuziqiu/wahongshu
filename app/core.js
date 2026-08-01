@@ -70,12 +70,14 @@ function recognizePage(urlText) {
         label: "单篇笔记",
       };
     }
-    if (/^\/user\/profile\/[^/]+/.test(url.pathname)) {
+    const profile = url.pathname.match(/^\/user\/profile\/([^/]+)/);
+    if (profile) {
       const favorites =
         url.searchParams.get("tab") === "fav" ||
         url.hash.includes("fav");
       return {
         type: favorites ? "favorites" : "profile",
+        profileId: profile[1],
         label: favorites ? "我的收藏" : "博主主页",
       };
     }
