@@ -207,7 +207,7 @@ tests/               Python 下载核心测试
 app/tests/           桌面端、发布脚本与会话保存测试
 design/branding/     生图源稿；由脚本裁切为最终应用图标
 scripts/             Windows 本地构建与发布收尾脚本
-.github/workflows/   持续集成与 GitHub Release 工作流
+.github/workflows/   源码测试持续集成；Release 使用本地验证成品直接上传
 release/             本地构建成品；二进制不提交到 Git
 ```
 
