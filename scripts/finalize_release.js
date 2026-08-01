@@ -2,8 +2,6 @@ const crypto = require("node:crypto");
 const fs = require("node:fs");
 const path = require("node:path");
 
-const { markAsConsoleExecutable } = require("./after_pack");
-
 function sha256File(filePath) {
   return crypto.createHash("sha256").update(fs.readFileSync(filePath)).digest("hex");
 }
@@ -23,11 +21,6 @@ function finalizeRelease({
   if (executablePath !== builtExecutablePath) {
     fs.renameSync(builtExecutablePath, executablePath);
   }
-
-  // electron-builder creates a GUI-subsystem portable launcher. The product
-  // intentionally uses that same EXE for GUI and CLI modes, so the outermost
-  // launcher must also be marked as a console application.
-  markAsConsoleExecutable(executablePath);
 
   const hash = sha256File(executablePath);
   const checksumPath = `${executablePath}.sha256`;

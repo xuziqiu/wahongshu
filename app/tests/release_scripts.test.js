@@ -21,6 +21,7 @@ test("finalizes the portable launcher and writes its checksum", () => {
     bytes[0] = 0x4d;
     bytes[1] = 0x5a;
     bytes.writeInt32LE(0x80, 0x3c);
+    bytes.writeUInt16LE(2, 0x80 + 92);
     fs.writeFileSync(executablePath, bytes);
 
     const result = finalizeRelease({
@@ -28,7 +29,7 @@ test("finalizes the portable launcher and writes its checksum", () => {
       projectRoot,
     });
     const finalized = fs.readFileSync(executablePath);
-    assert.equal(finalized.readUInt16LE(0x80 + 92), 3);
+    assert.equal(finalized.readUInt16LE(0x80 + 92), 2);
     assert.equal(result.hash, sha256File(executablePath));
     assert.equal(
       fs.readFileSync(result.checksumPath, "utf8"),

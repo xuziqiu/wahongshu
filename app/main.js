@@ -25,7 +25,6 @@ const {
   waitForRenderedNote,
 } = require("./page_workflow");
 const { parseCliInvocation, cliUsage } = require("./cli");
-const { createGuiConsoleLogger } = require("./console_logger");
 const { createSessionKeeper } = require("./session_store");
 const { completedNoteIds } = require("./resume");
 const { batchOutputDirectory } = require("./batch_output");
@@ -94,7 +93,6 @@ let activeWorker = null;
 let sessionKeeper = null;
 let cliWindow = null;
 let stateObserver = null;
-let guiConsoleLogger = null;
 let quitPrepared = false;
 let quitPreparing = false;
 let state = {
@@ -127,7 +125,6 @@ function publicState() {
 function broadcast() {
   const snapshot = publicState();
   stateObserver?.(snapshot);
-  guiConsoleLogger?.observe(snapshot);
   if (mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.webContents.send("wahongshu:state", snapshot);
   }
@@ -941,14 +938,6 @@ try {
   };
 }
 
-if (!cliInvocation) {
-  process.title = "挖红薯运行日志 - 请勿关闭（可以最小化）";
-  guiConsoleLogger = createGuiConsoleLogger({
-    write: (line) => writeCli(process.stdout, line),
-  });
-  guiConsoleLogger.start(app.getVersion());
-}
-
 app.whenReady().then(async () => {
   if (!cliInvocation) registerIpc();
   const xhsSession = session.fromPartition(PARTITION);
@@ -998,7 +987,6 @@ app.whenReady().then(async () => {
     return;
   }
   await createMainWindow();
-  guiConsoleLogger?.emit("浏览器", "图形界面和内置浏览器已就绪");
 });
 
 app.on("window-all-closed", () => {

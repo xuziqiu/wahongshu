@@ -25,7 +25,6 @@
   "build": {
     "appId": "cn.wahongshu.downloader",
     "productName": "挖红薯",
-    "afterPack": "scripts/after_pack.js",
     "asar": true,
     "files": [
       "app/**/*",
