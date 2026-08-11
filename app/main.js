@@ -725,7 +725,7 @@ async function createCliBrowser(targetUrl) {
 async function runCli(invocation) {
   if (invocation.parseError) throw new Error(invocation.parseError);
   if (invocation.help) {
-    writeCli(process.stdout, cliUsage());
+    writeCli(process.stdout, cliUsage(invocation.helpCommand));
     return 0;
   }
   if (invocation.version) {
