@@ -1,8 +1,44 @@
 const path = require("node:path");
 
 const COMMANDS = new Set(["download", "profile", "favorites"]);
+const HELP_TOKENS = new Set(["--help", "-h"]);
 
-function cliUsage() {
+function commandUsage(command) {
+  const common = [
+    "",
+    "通用选项：",
+    "  --output-dir=<目录>  临时指定本次保存目录",
+    "  --json               只输出最终 JSON 结果",
+  ];
+  if (command === "download") {
+    return [
+      "用法：",
+      "  挖红薯-CLI.exe download <小红书笔记链接> [--output-dir=<目录>] [--json]",
+      "",
+      "下载一篇笔记中的图片、Live Photo 或视频。",
+      ...common,
+    ].join("\n");
+  }
+  const label = command === "profile" ? "博主主页" : "我的收藏页";
+  return [
+    "用法：",
+    `  挖红薯-CLI.exe ${command} <${label}链接> [--limit <数量> | --all] [--resume] [--dry-run] [--list] [--output-dir=<目录>] [--json | --jsonl]`,
+    "",
+    `扫描并下载${label}中的笔记。`,
+    "",
+    "批量选项：",
+    "  --limit <数量>      下载前 1–1000 篇，默认 3 篇",
+    "  --all               持续扫描到页面末尾",
+    "  --resume            跳过已有成功清单的笔记",
+    "  --dry-run           只扫描和计算数量，不下载媒体",
+    "  --list              在预演结果中附带完整笔记列表；需配合 --dry-run",
+    "  --jsonl             逐行输出 JSON 进度事件和最终结果",
+    ...common,
+  ].join("\n");
+}
+
+function cliUsage(command = "") {
+  if (COMMANDS.has(command)) return commandUsage(command);
   return [
     "挖红薯命令行用法：",
     "  挖红薯-CLI.exe download <小红书链接> [--output-dir=<目录>] [--json]",
@@ -10,21 +46,34 @@ function cliUsage() {
     "  挖红薯-CLI.exe favorites <收藏页链接> [--limit 3 | --all] [--resume] [--dry-run] [--list] [--output-dir=<目录>] [--json | --jsonl]",
     "  挖红薯-CLI.exe --help",
     "  挖红薯-CLI.exe --version",
+    "  挖红薯-CLI.exe <命令> --help",
     "",
     "CLI 与图形界面共用登录状态、设置和下载核心。",
+    "完整参考：https://github.com/xuziqiu/wahongshu/blob/main/docs/cli.md",
   ].join("\n");
 }
 
 function parseCliInvocation(argv, defaultApp = false) {
   const args = argv.slice(defaultApp ? 2 : 1);
   if (!args.length) return null;
-  if (["--help", "-h", "help"].includes(args[0])) return { help: true };
+  if (HELP_TOKENS.has(args[0])) return { help: true };
+  if (args[0] === "help") {
+    if (!args[1]) return { help: true };
+    const helpCommand = args[1].toLowerCase();
+    if (!COMMANDS.has(helpCommand) || args.length > 2) {
+      throw new Error(`无法识别的帮助主题：${args.slice(1).join(" ")}`);
+    }
+    return { help: true, helpCommand };
+  }
   if (["--version", "-v", "version"].includes(args[0])) {
     return { version: true };
   }
   const command = args[0].toLowerCase();
   if (!COMMANDS.has(command)) {
     throw new Error(`无法识别的命令：${args[0]}。请使用 --help 查看用法`);
+  }
+  if (args.length === 2 && HELP_TOKENS.has(args[1])) {
+    return { help: true, helpCommand: command };
   }
 
   let url = "";

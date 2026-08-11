@@ -1,10 +1,34 @@
 const assert = require("node:assert/strict");
 const test = require("node:test");
 
-const { parseCliInvocation } = require("../cli");
+const { cliUsage, parseCliInvocation } = require("../cli");
 
 test("opens the GUI when no CLI command is present", () => {
   assert.equal(parseCliInvocation(["挖红薯.exe"]), null);
+});
+
+test("provides command-specific help in both common forms", () => {
+  const direct = parseCliInvocation([
+    "挖红薯-CLI.exe",
+    "profile",
+    "--help",
+  ]);
+  const topic = parseCliInvocation([
+    "挖红薯-CLI.exe",
+    "help",
+    "favorites",
+  ]);
+  assert.deepEqual(direct, { help: true, helpCommand: "profile" });
+  assert.deepEqual(topic, { help: true, helpCommand: "favorites" });
+  assert.match(cliUsage("profile"), /--all/);
+  assert.match(cliUsage("favorites"), /我的收藏页/);
+});
+
+test("rejects an unknown help topic", () => {
+  assert.throws(
+    () => parseCliInvocation(["挖红薯-CLI.exe", "help", "unknown"]),
+    /无法识别的帮助主题/,
+  );
 });
 
 test("parses a JSON single-note download", () => {

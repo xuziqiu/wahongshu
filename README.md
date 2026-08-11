@@ -22,6 +22,8 @@
   <a href="#图形界面使用方法">图形界面</a>
   ·
   <a href="#命令行使用方法">命令行</a>
+  ·
+  <a href="./docs/cli.md">CLI 完整参考</a>
 </p>
 
 挖红薯用于保存你在小红书页面中能够正常访问的图片、Live Photo 和视频。
@@ -72,6 +74,9 @@
 
 ## 命令行使用方法
 
+本节用于快速上手；所有命令、参数、JSON 字段、退出码和错误代码请查看
+[《挖红薯命令行参考》](./docs/cli.md)。
+
 Release 同时提供 `WaHongShu-<版本>.exe`（GUI）和
 `WaHongShu-CLI-<版本>.exe`（CLI）。二者都是可单独复制运行的自包含 EXE，
 不需要旁挂程序目录；CLI 内部复用同一套浏览器会话和下载核心，适合自动化
@@ -81,33 +86,33 @@ Release 同时提供 `WaHongShu-<版本>.exe`（GUI）和
 
 ```powershell
 # 查看帮助和版本
-& ".\WaHongShu-CLI-1.2.0.exe" --help
-& ".\WaHongShu-CLI-1.2.0.exe" --version
+& ".\WaHongShu-CLI-1.2.1.exe" --help
+& ".\WaHongShu-CLI-1.2.1.exe" --version
 
 # 下载单篇笔记
-& ".\WaHongShu-CLI-1.2.0.exe" download "<小红书笔记链接>"
+& ".\WaHongShu-CLI-1.2.1.exe" download "<小红书笔记链接>"
 
 # 下载博主主页前 5 篇
-& ".\WaHongShu-CLI-1.2.0.exe" profile "<博主主页链接>" --limit 5
+& ".\WaHongShu-CLI-1.2.1.exe" profile "<博主主页链接>" --limit 5
 
 # 断点续传：只处理没有成功 manifest 的笔记
-& ".\WaHongShu-CLI-1.2.0.exe" profile --all --resume "<博主主页链接>"
+& ".\WaHongShu-CLI-1.2.1.exe" profile --all --resume "<博主主页链接>"
 
 # 扫描到主页末尾，并输出适合 AI 实时读取的 JSONL 进度
-& ".\WaHongShu-CLI-1.2.0.exe" profile --all --resume --jsonl "<博主主页链接>"
+& ".\WaHongShu-CLI-1.2.1.exe" profile --all --resume --jsonl "<博主主页链接>"
 
 # 只预演断点续传数量，不下载任何文件
-& ".\WaHongShu-CLI-1.2.0.exe" profile --all --resume --dry-run --json "<博主主页链接>"
+& ".\WaHongShu-CLI-1.2.1.exe" profile --all --resume --dry-run --json "<博主主页链接>"
 
 # 下载“我的收藏”前 3 篇
-& ".\WaHongShu-CLI-1.2.0.exe" favorites "<收藏页链接>" --limit 3
+& ".\WaHongShu-CLI-1.2.1.exe" favorites "<收藏页链接>" --limit 3
 
 # 本次任务临时指定保存位置，不修改图形界面中的偏好设置
-& ".\WaHongShu-CLI-1.2.0.exe" download "<小红书笔记链接>" `
+& ".\WaHongShu-CLI-1.2.1.exe" download "<小红书笔记链接>" `
   "--output-dir=D:\Media\挖红薯"
 
 # 输出单行 JSON，方便脚本或 AI 读取
-& ".\WaHongShu-CLI-1.2.0.exe" profile "<博主主页链接>" `
+& ".\WaHongShu-CLI-1.2.1.exe" profile "<博主主页链接>" `
   --limit 5 --json
 ```
 
@@ -163,8 +168,8 @@ CLI 不带参数时显示帮助；需要图形界面时运行不带 `-CLI` 的 E
 校验文件，可在 PowerShell 中核对：
 
 ```powershell
-Get-FileHash -Algorithm SHA256 ".\WaHongShu-1.2.0.exe"
-Get-FileHash -Algorithm SHA256 ".\WaHongShu-CLI-1.2.0.exe"
+Get-FileHash -Algorithm SHA256 ".\WaHongShu-1.2.1.exe"
+Get-FileHash -Algorithm SHA256 ".\WaHongShu-CLI-1.2.1.exe"
 ```
 
 输出应与同一 Release 中 `.exe.sha256` 文件记录的值一致。
