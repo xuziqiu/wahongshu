@@ -1,3 +1,4 @@
+const fs = require("node:fs");
 const path = require("node:path");
 
 const COMMANDS = new Set(["download", "profile", "favorites"]);
@@ -13,7 +14,7 @@ function commandUsage(command) {
   if (command === "download") {
     return [
       "用法：",
-      "  挖红薯-CLI.exe download <小红书笔记链接> [--output-dir=<目录>] [--json]",
+      "  WaHongShu.exe download <小红书笔记链接> [--output-dir=<目录>] [--json]",
       "",
       "下载一篇笔记中的图片、Live Photo 或视频。",
       ...common,
@@ -22,7 +23,7 @@ function commandUsage(command) {
   const label = command === "profile" ? "博主主页" : "我的收藏页";
   return [
     "用法：",
-    `  挖红薯-CLI.exe ${command} <${label}链接> [--limit <数量> | --all] [--resume] [--dry-run] [--list] [--output-dir=<目录>] [--json | --jsonl]`,
+    `  WaHongShu.exe ${command} <${label}链接> [--limit <数量> | --all] [--resume] [--dry-run] [--list] [--output-dir=<目录>] [--json | --jsonl]`,
     "",
     `扫描并下载${label}中的笔记。`,
     "",
@@ -41,12 +42,12 @@ function cliUsage(command = "") {
   if (COMMANDS.has(command)) return commandUsage(command);
   return [
     "挖红薯命令行用法：",
-    "  挖红薯-CLI.exe download <小红书链接> [--output-dir=<目录>] [--json]",
-    "  挖红薯-CLI.exe profile <博主主页链接> [--limit 3 | --all] [--resume] [--dry-run] [--list] [--output-dir=<目录>] [--json | --jsonl]",
-    "  挖红薯-CLI.exe favorites <收藏页链接> [--limit 3 | --all] [--resume] [--dry-run] [--list] [--output-dir=<目录>] [--json | --jsonl]",
-    "  挖红薯-CLI.exe --help",
-    "  挖红薯-CLI.exe --version",
-    "  挖红薯-CLI.exe <命令> --help",
+    "  WaHongShu.exe download <小红书链接> [--output-dir=<目录>] [--json]",
+    "  WaHongShu.exe profile <博主主页链接> [--limit 3 | --all] [--resume] [--dry-run] [--list] [--output-dir=<目录>] [--json | --jsonl]",
+    "  WaHongShu.exe favorites <收藏页链接> [--limit 3 | --all] [--resume] [--dry-run] [--list] [--output-dir=<目录>] [--json | --jsonl]",
+    "  WaHongShu.exe --help",
+    "  WaHongShu.exe --version",
+    "  WaHongShu.exe <命令> --help",
     "",
     "CLI 与图形界面共用登录状态、设置和下载核心。",
     "完整参考：https://github.com/xuziqiu/wahongshu/blob/main/docs/cli.md",
@@ -149,7 +150,17 @@ function parseCliInvocation(argv, defaultApp = false) {
   };
 }
 
+function readCliInvocationArguments(filePath) {
+  if (!filePath) return null;
+  const value = JSON.parse(fs.readFileSync(filePath, "utf8"));
+  if (!Array.isArray(value) || value.some((item) => typeof item !== "string")) {
+    throw new Error("CLI 调用参数文件格式无效");
+  }
+  return value;
+}
+
 module.exports = {
   cliUsage,
   parseCliInvocation,
+  readCliInvocationArguments,
 };

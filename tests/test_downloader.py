@@ -8,6 +8,7 @@ from core.downloader import (
     download_live_photo,
     download_note_video,
     find_note,
+    parse_initial_state,
     resolve_note_title,
 )
 
@@ -27,6 +28,16 @@ EF51_MP4 = b"\x00\x00\x00\x18ftypisomef51" + b"video"
 
 
 class DownloadCoreTests(unittest.TestCase):
+    def test_parses_a_minimal_snapshot_from_the_rendered_note_json(self):
+        note_id = "6a5c69ab000000000f02b320"
+        html = (
+            '<script>window.__INITIAL_STATE__={"note":'
+            '{"noteId":"' + note_id + '","type":"normal","imageList":[{}]}'
+            "}</script>"
+        )
+        state = parse_initial_state(html)
+        self.assertEqual(find_note(state, note_id)["noteId"], note_id)
+
     def test_title_fallback_is_used_only_when_page_title_is_empty(self):
         self.assertEqual(resolve_note_title({"title": "页面标题"}, "后备标题"), "页面标题")
         self.assertEqual(resolve_note_title({"title": ""}, "后备标题"), "后备标题")

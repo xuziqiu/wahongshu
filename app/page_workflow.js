@@ -25,6 +25,14 @@ async function waitForRenderedNote(
   throw new Error(`浏览器没有加载出笔记 ${noteId} 的详情`);
 }
 
+function noteStateSnapshot(serializedNote) {
+  const note = JSON.parse(serializedNote);
+  if (!note || typeof note !== "object" || Array.isArray(note)) {
+    throw new Error("浏览器返回的笔记状态格式无效");
+  }
+  return `<script>window.__INITIAL_STATE__=${JSON.stringify({ note })}</script>`;
+}
+
 async function openStandaloneNotePage(contents, noteId, signal) {
   if (signal.aborted) throw new Error("任务已停止");
   const currentUrl = contents.getURL();
@@ -96,6 +104,7 @@ async function resolveBatchNoteUrl(
 }
 
 module.exports = {
+  noteStateSnapshot,
   openStandaloneNotePage,
   resolveBatchNoteUrl,
   waitForRenderedNote,

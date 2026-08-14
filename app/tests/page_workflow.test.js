@@ -2,6 +2,7 @@ const assert = require("node:assert/strict");
 const test = require("node:test");
 
 const {
+  noteStateSnapshot,
   openStandaloneNotePage,
   resolveBatchNoteUrl,
   waitForRenderedNote,
@@ -9,6 +10,18 @@ const {
 
 const NOTE_ID = "6a5c69ab000000000f02b320";
 const LIST_URL = "https://www.xiaohongshu.com/user/profile/test?tab=fav";
+
+test("builds a stable downloader snapshot from the rendered note JSON", () => {
+  const serialized = JSON.stringify({
+    noteId: NOTE_ID,
+    type: "normal",
+    imageList: [{ fileId: "image-1" }],
+  });
+  const snapshot = noteStateSnapshot(serialized);
+  assert.match(snapshot, /^<script>window\.__INITIAL_STATE__=/);
+  assert.match(snapshot, new RegExp(NOTE_ID));
+  assert.doesNotMatch(snapshot, /documentElement/);
+});
 
 test("reloads a modal note URL as a standalone document", async () => {
   const url = `https://www.xiaohongshu.com/explore/${NOTE_ID}?xsec_token=secret`;

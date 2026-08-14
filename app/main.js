@@ -20,11 +20,16 @@ const {
   cleanPageTitle,
 } = require("./core");
 const {
+  noteStateSnapshot,
   openStandaloneNotePage,
   resolveBatchNoteUrl,
   waitForRenderedNote,
 } = require("./page_workflow");
-const { parseCliInvocation, cliUsage } = require("./cli");
+const {
+  parseCliInvocation,
+  readCliInvocationArguments,
+  cliUsage,
+} = require("./cli");
 const { createSessionKeeper } = require("./session_store");
 const { completedNoteIds } = require("./resume");
 const { batchOutputDirectory } = require("./batch_output");
@@ -345,20 +350,12 @@ async function loadRenderedNoteSnapshot(item, signal, onLine, listUrl = "") {
     onLine?.("正在打开当前笔记的完整页面…");
     await openStandaloneNotePage(contents, item.noteId, signal);
   }
-  await waitForRenderedNote(
+  const serializedNote = await waitForRenderedNote(
     contents,
     item.noteId,
     signal,
   );
-  const html = await contents.executeJavaScript(
-    "document.documentElement.outerHTML",
-  );
-  if (
-    !String(html).includes("window.__INITIAL_STATE__") ||
-    !String(html).toLowerCase().includes(item.noteId.toLowerCase())
-  ) {
-    throw new Error("当前笔记原始页面缺少完整媒体状态");
-  }
+  const html = noteStateSnapshot(serializedNote);
   onLine?.("已从当前登录页面读取原始笔记状态");
   return html;
 }
@@ -924,17 +921,27 @@ function registerIpc() {
 }
 
 let cliInvocation = null;
+let cliArgumentVector = process.argv;
+let cliDefaultApp = Boolean(process.defaultApp);
 try {
+  const bridgedArguments = readCliInvocationArguments(
+    process.env.WAHONGSHU_CLI_INVOCATION_FILE,
+  );
+  if (bridgedArguments) {
+    cliArgumentVector = [process.execPath, ...bridgedArguments];
+    cliDefaultApp = false;
+  }
   cliInvocation = parseCliInvocation(
-    process.argv,
-    Boolean(process.defaultApp),
+    cliArgumentVector,
+    cliDefaultApp,
   );
 } catch (error) {
   cliInvocation = {
     parseError: error instanceof Error ? error.message : String(error),
     json:
-      process.argv.includes("--json") || process.argv.includes("--jsonl"),
-    jsonl: process.argv.includes("--jsonl"),
+      cliArgumentVector.includes("--json") ||
+      cliArgumentVector.includes("--jsonl"),
+    jsonl: cliArgumentVector.includes("--jsonl"),
   };
 }
 

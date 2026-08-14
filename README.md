@@ -70,49 +70,48 @@
 - 50%–200% 的内置网页缩放，以及 `Ctrl＋`、`Ctrl−`、`Ctrl＋0` 快捷键。
 - 一键打开下载目录。
 - 停止正在扫描或下载的任务。
-- 任务卡片实时显示页面识别、当前笔记、进度和错误；GUI 启动时不会附带命令行黑框。
+- 同一个 EXE 无参数时打开 GUI，有命令参数时进入 CLI 模式。
 
 ## 命令行使用方法
 
 本节用于快速上手；所有命令、参数、JSON 字段、退出码和错误代码请查看
 [《挖红薯命令行参考》](./docs/cli.md)。
 
-Release 同时提供 `WaHongShu-<版本>.exe`（GUI）和
-`WaHongShu-CLI-<版本>.exe`（CLI）。二者都是可单独复制运行的自包含 EXE，
-不需要旁挂程序目录；CLI 内部复用同一套浏览器会话和下载核心，适合自动化
-脚本、批处理和 AI Agent。第一次使用仍应先打开 GUI 完成登录。
+Release 只提供一个 `WaHongShu-<版本>.exe`。双击或不带参数运行时打开 GUI；
+传入命令参数时进入 CLI 模式。两种模式共享同一套浏览器会话、设置和下载核心，
+不需要安装或旁挂其他程序。第一次使用应先双击同一 EXE 完成登录。
 
 下面以 PowerShell 为例：
 
 ```powershell
 # 查看帮助和版本
-& ".\WaHongShu-CLI-1.2.1.exe" --help
-& ".\WaHongShu-CLI-1.2.1.exe" --version
+& ".\WaHongShu-1.3.0.exe" --help
+& ".\WaHongShu-1.3.0.exe" --version
 
 # 下载单篇笔记
-& ".\WaHongShu-CLI-1.2.1.exe" download "<小红书笔记链接>"
+& ".\WaHongShu-1.3.0.exe" download "<小红书笔记链接>"
 
 # 下载博主主页前 5 篇
-& ".\WaHongShu-CLI-1.2.1.exe" profile "<博主主页链接>" --limit 5
+& ".\WaHongShu-1.3.0.exe" profile "<博主主页链接>" --limit 5
 
 # 断点续传：只处理没有成功 manifest 的笔记
-& ".\WaHongShu-CLI-1.2.1.exe" profile --all --resume "<博主主页链接>"
+& ".\WaHongShu-1.3.0.exe" profile --all --resume "<博主主页链接>"
 
 # 扫描到主页末尾，并输出适合 AI 实时读取的 JSONL 进度
-& ".\WaHongShu-CLI-1.2.1.exe" profile --all --resume --jsonl "<博主主页链接>"
+& ".\WaHongShu-1.3.0.exe" profile --all --resume --jsonl "<博主主页链接>"
 
 # 只预演断点续传数量，不下载任何文件
-& ".\WaHongShu-CLI-1.2.1.exe" profile --all --resume --dry-run --json "<博主主页链接>"
+& ".\WaHongShu-1.3.0.exe" profile --all --resume --dry-run --json "<博主主页链接>"
 
 # 下载“我的收藏”前 3 篇
-& ".\WaHongShu-CLI-1.2.1.exe" favorites "<收藏页链接>" --limit 3
+& ".\WaHongShu-1.3.0.exe" favorites "<收藏页链接>" --limit 3
 
 # 本次任务临时指定保存位置，不修改图形界面中的偏好设置
-& ".\WaHongShu-CLI-1.2.1.exe" download "<小红书笔记链接>" `
+& ".\WaHongShu-1.3.0.exe" download "<小红书笔记链接>" `
   "--output-dir=D:\Media\挖红薯"
 
 # 输出单行 JSON，方便脚本或 AI 读取
-& ".\WaHongShu-CLI-1.2.1.exe" profile "<博主主页链接>" `
+& ".\WaHongShu-1.3.0.exe" profile "<博主主页链接>" `
   --limit 5 --json
 ```
 
@@ -128,7 +127,8 @@ Release 同时提供 `WaHongShu-<版本>.exe`（GUI）和
 `AUTH_REQUIRED` 或 `LOGIN_REQUIRED`。只有显式添加 `--list` 时，预演结果才会
 附带完整笔记 ID 清单，避免普通 AI 调用收到过大的 JSON。
 
-CLI 不带参数时显示帮助；需要图形界面时运行不带 `-CLI` 的 EXE。
+不带参数时打开图形界面；只有传入命令或帮助参数时才进入 CLI 模式。为避免
+同时读写浏览器会话，同一时间只允许运行一个挖红薯实例。
 
 ## 下载结果
 
@@ -168,8 +168,7 @@ CLI 不带参数时显示帮助；需要图形界面时运行不带 `-CLI` 的 E
 校验文件，可在 PowerShell 中核对：
 
 ```powershell
-Get-FileHash -Algorithm SHA256 ".\WaHongShu-1.2.1.exe"
-Get-FileHash -Algorithm SHA256 ".\WaHongShu-CLI-1.2.1.exe"
+Get-FileHash -Algorithm SHA256 ".\WaHongShu-1.3.0.exe"
 ```
 
 输出应与同一 Release 中 `.exe.sha256` 文件记录的值一致。
@@ -199,14 +198,14 @@ npm run dist:local
 ```
 
 本地构建脚本会在纯英文的 Windows 临时目录中完成封装，以避开部分打包工具对
-中文路径的兼容问题。最终会在 `release/` 生成 GUI、CLI 两个自包含 EXE 及各自
-的 SHA-256 文件。它们共享同一应用数据目录、登录会话、设置和下载核心。
+中文路径的兼容问题。最终会在 `release/` 生成一个同时支持 GUI 和 CLI 的
+自包含 EXE，以及对应的 SHA-256 文件。
 
 ## 项目结构
 
 ```text
 app/                 Electron 桌面程序、内置浏览器、任务编排与界面
-cli/                 独立 CLI EXE 启动器与实时输出桥接
+cli/                 GUI/CLI 双模式启动器与实时输出桥接
 core/downloader.py   单篇笔记媒体下载核心
 tests/               Python 下载核心测试
 app/tests/           桌面端、发布脚本与会话保存测试

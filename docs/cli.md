@@ -5,14 +5,14 @@ PowerShell，以及需要调用挖红薯的脚本或 AI Agent。
 
 ## 快速开始
 
-CLI 是自包含 EXE，不需要安装 Python、Node.js 或额外主程序目录。第一次使用前，
-先运行 GUI 版并在内置浏览器中登录小红书。GUI 与 CLI 共用保存在本机的登录会话。
+挖红薯只有一个自包含 EXE，不需要安装 Python、Node.js 或额外主程序目录。
+第一次使用前，先双击同一 EXE，在 GUI 的内置浏览器中登录小红书。
 
 在 PowerShell 中进入 EXE 所在目录：
 
 ```powershell
 cd "D:\工具\挖红薯"
-$cli = ".\WaHongShu-CLI-1.2.1.exe"
+$cli = ".\WaHongShu-1.3.0.exe"
 & $cli --version
 & $cli --help
 ```
@@ -235,6 +235,7 @@ PowerShell 可在命令结束后读取 `$LASTEXITCODE`：
 | `0` | 成功，包括预演成功或断点续传后无需下载 |
 | `1` | 参数错误、页面识别失败或下载失败 |
 | `2` | CLI 启动器未能启动内置程序 |
+| `3` | 已有 GUI 或 CLI 实例正在运行 |
 | `130` | 用户使用 `Ctrl+C` 中断 |
 
 ```powershell
@@ -248,8 +249,8 @@ if ($LASTEXITCODE -ne 0) {
 
 | 错误代码 | 含义 | 建议处理 |
 | --- | --- | --- |
-| `LOGIN_REQUIRED` | 登录状态缺失或失效 | 打开 GUI 登录后，使用 `--resume` 重试 |
-| `AUTH_REQUIRED` | 小红书要求安全验证 | 在 GUI 完成验证后，使用 `--resume` 重试 |
+| `LOGIN_REQUIRED` | 登录状态缺失或失效 | 双击同一 EXE 登录后，使用 `--resume` 重试 |
+| `AUTH_REQUIRED` | 小红书要求安全验证 | 双击同一 EXE 完成验证后，使用 `--resume` 重试 |
 | `CANCELLED` | 任务被停止 | 确认范围后使用 `--resume` 重试 |
 | `DOWNLOAD_FAILED` | 下载、页面读取或媒体处理失败 | 查看 `error` 和 `failures` 字段 |
 
@@ -257,9 +258,10 @@ if ($LASTEXITCODE -ne 0) {
 
 ## 登录与本机数据
 
-- CLI 和 GUI 共用 `%APPDATA%\挖红薯` 中的登录会话与设置。
+- 同一 EXE 的 CLI 和 GUI 模式共用 `%APPDATA%\挖红薯` 中的登录会话与设置。
 - CLI 不会要求在终端中输入小红书密码。
-- 首次登录、二维码和安全验证需要在 GUI 的内置浏览器中完成。
+- 首次登录、二维码和安全验证需要双击同一 EXE，在 GUI 中完成。
+- 为避免会话和下载目录冲突，运行 CLI 前应先关闭 GUI。
 - 删除源码目录不会删除登录会话或已下载媒体。
 
 ## 推荐工作流
