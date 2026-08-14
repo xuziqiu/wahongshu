@@ -55,10 +55,15 @@ try {
 
 $releaseRoot = Join-Path $projectRoot "release"
 New-Item -ItemType Directory -Force -Path $releaseRoot | Out-Null
+$package = Get-Content -LiteralPath (Join-Path $projectRoot "package.json") `
+  -Encoding UTF8 | ConvertFrom-Json
+$artifactName = "WaHongShu-$($package.version).exe"
 $builtAssets = Get-ChildItem -LiteralPath (Join-Path $stagingRoot "release") `
-  -File | Where-Object { $_.Name -match '\.exe(?:\.sha256)?$' }
-if ($builtAssets.Count -ne 4) {
-  throw "Expected two EXEs and two SHA-256 files, found $($builtAssets.Count)."
+  -File | Where-Object {
+    $_.Name -in @($artifactName, "$artifactName.sha256")
+  }
+if ($builtAssets.Count -ne 2) {
+  throw "Expected one EXE and one SHA-256 file, found $($builtAssets.Count)."
 }
 foreach ($asset in $builtAssets) {
   $destination = Join-Path $releaseRoot $asset.Name

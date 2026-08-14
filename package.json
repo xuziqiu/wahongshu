@@ -1,6 +1,6 @@
 {
   "name": "wahongshu",
-  "version": "1.2.1",
+  "version": "1.3.0",
   "private": true,
   "description": "挖红薯：带内置浏览器的小红书媒体下载与备份工具",
   "author": "XUZIQIU",
@@ -13,9 +13,9 @@
     "test": "npm run test:node && npm run test:python",
     "check": "npm test",
     "build:core": "python -m PyInstaller --noconfirm --clean --onefile --name wahongshu-core --distpath build/core --workpath build/pyinstaller --specpath build/pyinstaller core/downloader.py",
-    "pack": "npm run build:core && electron-builder --dir",
-    "dist": "npm test && npm run build:core && electron-builder --win portable && node scripts/finalize_release.js && powershell -ExecutionPolicy Bypass -File scripts/build_cli.ps1",
-    "dist:staged": "npm test && npm run build:core && electron-builder --win portable --config.electronDist=electron-dist && node scripts/finalize_release.js && powershell -ExecutionPolicy Bypass -File scripts/build_cli.ps1",
+    "pack": "npm run build:core && electron-builder --dir --config.electronDist=node_modules/electron/dist",
+    "dist": "npm test && npm run build:core && electron-builder --dir --config.electronDist=node_modules/electron/dist && powershell -ExecutionPolicy Bypass -File scripts/build_unified.ps1",
+    "dist:staged": "npm test && npm run build:core && electron-builder --dir --config.electronDist=electron-dist && powershell -ExecutionPolicy Bypass -File scripts/build_unified.ps1",
     "dist:local": "powershell -ExecutionPolicy Bypass -File scripts/build_release.ps1"
   },
   "devDependencies": {

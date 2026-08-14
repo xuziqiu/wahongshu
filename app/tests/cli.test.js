@@ -1,7 +1,31 @@
 const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const os = require("node:os");
+const path = require("node:path");
 const test = require("node:test");
 
-const { cliUsage, parseCliInvocation } = require("../cli");
+const {
+  cliUsage,
+  parseCliInvocation,
+  readCliInvocationArguments,
+} = require("../cli");
+
+test("reads bridged CLI arguments without exposing the URL to Electron", () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "wahongshu-cli-"));
+  try {
+    const invocationFile = path.join(directory, "invocation.json");
+    const expected = [
+      "favorites",
+      "https://www.xiaohongshu.com/user/profile/test?tab=fav",
+      "--dry-run",
+      "--json",
+    ];
+    fs.writeFileSync(invocationFile, JSON.stringify(expected), "utf8");
+    assert.deepEqual(readCliInvocationArguments(invocationFile), expected);
+  } finally {
+    fs.rmSync(directory, { recursive: true, force: true });
+  }
+});
 
 test("opens the GUI when no CLI command is present", () => {
   assert.equal(parseCliInvocation(["挖红薯.exe"]), null);
